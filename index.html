@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Capture Card Player</title>
+    <style>
+      /* -------------------------------------------------------
+       Catppuccin Macchiato palette
+       https://catppuccin.com/palette
+      ------------------------------------------------------- */
+      :root {
+        --ctp-base: #24273a;
+        --ctp-mantle: #1e2030;
+        --ctp-crust: #181926;
+        --ctp-surface0: #363a4f;
+        --ctp-surface1: #494d64;
+        --ctp-surface2: #5b6078;
+        --ctp-overlay0: #6e738d;
+        --ctp-overlay2: #939ab7;
+        --ctp-text: #cad3f5;
+        --ctp-lavender: #b7bdf8; /* kept for reference */
+        --ctp-teal: #8bd5ca; /* accent color */
+      }
+
+      /* -------------------------------------------------------
+       Icons — inlined SVGs inherit color from their parent button
+      ------------------------------------------------------- */
+      .icon {
+        display: block;
+        flex-shrink: 0;
+        /* Inherits stroke color from the parent element */
+      }
+
+      /* -------------------------------------------------------
+       Reset & base
+      ------------------------------------------------------- */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        background-color: var(--ctp-base);
+        color: var(--ctp-text);
+        font-family: system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 16px;
+      }
+
+      /* -------------------------------------------------------
+       Device selector bar
+      ------------------------------------------------------- */
+      #device-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        /* Match the max width of the video at 16:9 given the available height */
+        max-width: calc((100vh - 16px - 12px - 36px - 12px - 16px) * (16 / 9));
+      }
+
+      /* Custom dropdown */
+      #device-dropdown {
+        flex: 1;
+        position: relative;
+      }
+
+      #device-dropdown-trigger {
+        /* Reset native <button> styling */
+        width: 100%;
+        font-family: inherit;
+        outline: none;
+
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        background-color: var(--ctp-surface0);
+        border: 1px solid var(--ctp-surface1);
+        color: var(--ctp-text);
+        padding: 7px 10px;
+        border-radius: 8px;
+        font-size: 13px;
+        cursor: pointer;
+        user-select: none;
+        transition: border-color 0.15s;
+      }
+
+      #device-dropdown-trigger:hover,
+      #device-dropdown[aria-expanded='true'] #device-dropdown-trigger {
+        border-color: var(--ctp-surface2);
+      }
+
+      #device-dropdown-chevron {
+        opacity: 0.6;
+        transition: transform 0.15s;
+        flex-shrink: 0;
+      }
+
+      #device-dropdown[aria-expanded='true'] #device-dropdown-chevron {
+        transform: rotate(180deg);
+      }
+
+      #device-dropdown-list {
+        display: none;
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        background-color: var(--ctp-surface0);
+        border: 1px solid var(--ctp-surface1);
+        border-radius: 8px;
+        padding: 4px;
+        list-style: none;
+        z-index: 100;
+        overflow: hidden;
+      }
+
+      #device-dropdown[aria-expanded='true'] #device-dropdown-list {
+        display: block;
+      }
+
+      /* Each <li> is just a layout container; the <button> inside is the
+       actual interactive element, so it carries the visual styling. */
+      #device-dropdown-list li {
+        display: block;
+      }
+
+      #device-dropdown-list .dropdown-option {
+        width: 100%;
+        font-family: inherit;
+        text-align: left;
+        outline: none;
+
+        display: block;
+        background: none;
+        border: none;
+        padding: 7px 10px;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+        color: var(--ctp-text);
+        transition: background-color 0.1s;
+      }
+
+      #device-dropdown-list .dropdown-option:hover,
+      #device-dropdown-list .dropdown-option:focus-visible,
+      #device-dropdown-list .dropdown-option[aria-selected='true'] {
+        background-color: var(--ctp-surface1);
+      }
+
+      #device-dropdown-list .dropdown-option[aria-selected='true'] {
+        color: var(--ctp-teal);
+      }
+
+      #device-dropdown-list .dropdown-option--empty {
+        color: var(--ctp-overlay0);
+        cursor: default;
+      }
+
+      #device-dropdown-list .dropdown-option--empty:hover {
+        background-color: transparent;
+      }
+
+      #connect-btn {
+        background-color: var(--ctp-surface0);
+        border: 1px solid var(--ctp-surface1);
+        color: var(--ctp-text);
+        padding: 7px 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-family: inherit;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        white-space: nowrap;
+        /* Fixed width so Connect and Disconnect never shift layout */
+        min-width: 130px;
+        transition:
+          background-color 0.15s,
+          border-color 0.15s;
+      }
+
+      #connect-btn:hover {
+        background-color: var(--ctp-surface1);
+        border-color: var(--ctp-surface2);
+      }
+
+      #connect-btn i {
+        font-size: 15px;
+      }
+
+      /* -------------------------------------------------------
+       Player wrapper — 16:9 aspect ratio, fills available space
+      ------------------------------------------------------- */
+      #player-wrap {
+        position: relative;
+        /*
+        Fit inside the remaining vertical space while keeping 16:9.
+        Available height = 100vh minus: top padding (16) + bar height (36) +
+        gap (12) + bottom padding (16) = 80px total chrome.
+      */
+        max-height: calc(100vh - 80px);
+        width: 100%;
+        max-width: calc((100vh - 80px) * (16 / 9) - 16px);
+        aspect-ratio: 16 / 9;
+        background-color: var(--ctp-crust);
+        border-radius: 10px;
+        overflow: hidden;
+        cursor: default;
+        transition: cursor 0.1s;
+      }
+
+      /* Hide the cursor when the player signals it should be hidden */
+      #player-wrap.cursor-hidden {
+        cursor: none;
+      }
+
+      /* -------------------------------------------------------
+       Video element — fills the wrapper
+      ------------------------------------------------------- */
+      #video {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: contain;
+        background-color: #000;
+      }
+
+      /* -------------------------------------------------------
+       No-signal overlay
+      ------------------------------------------------------- */
+      #no-signal {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        color: var(--ctp-overlay0);
+        font-size: 13px;
+        pointer-events: none;
+      }
+
+      .dot-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 8px);
+        gap: 5px;
+        margin-bottom: 6px;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: var(--ctp-surface0);
+        animation: blink 1.4s infinite both;
+      }
+
+      .dot:nth-child(odd) {
+        animation-delay: 0.2s;
+      }
+      .dot:nth-child(3) {
+        animation-delay: 0.5s;
+      }
+
+      @keyframes blink {
+        0%,
+        100% {
+          opacity: 0.2;
+        }
+        50% {
+          opacity: 0.8;
+        }
+      }
+
+      /* -------------------------------------------------------
+       Playback controls bar
+      ------------------------------------------------------- */
+      #controls {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 12px 16px 14px;
+        background: linear-gradient(transparent, rgba(24, 25, 38, 0.9));
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        opacity: 0;
+        transition: opacity 0.25s;
+      }
+
+      #controls.visible {
+        opacity: 1;
+      }
+
+      .control-btn {
+        background: none;
+        border: none;
+        color: var(--ctp-text);
+        cursor: pointer;
+        padding: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        opacity: 0.8;
+        transition:
+          opacity 0.15s,
+          background-color 0.15s;
+      }
+
+      .control-btn:hover {
+        opacity: 1;
+        background-color: rgba(202, 211, 245, 0.1);
+      }
+
+      .control-btn i {
+        font-size: 18px;
+        line-height: 1;
+      }
+
+      #volume-group {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      #volume-slider {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 80px;
+        height: 3px;
+        background-color: var(--ctp-surface2);
+        border-radius: 2px;
+        outline: none;
+        cursor: pointer;
+      }
+
+      #volume-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background-color: var(--ctp-teal);
+        cursor: pointer;
+      }
+
+      #volume-slider::-moz-range-thumb {
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background-color: var(--ctp-teal);
+        border: none;
+        cursor: pointer;
+      }
+
+      #volume-label {
+        color: var(--ctp-overlay2);
+        font-size: 11px;
+        min-width: 30px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .spacer {
+        flex: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Device selector -->
+    <div id="device-bar">
+      <!-- Custom dropdown replaces native <select> for full styling control -->
+      <div id="device-dropdown" aria-haspopup="listbox" aria-expanded="false">
+        <button type="button" id="device-dropdown-trigger" aria-label="Select a source">
+          <span id="device-dropdown-label">— Select a source —</span>
+          <svg
+            id="device-dropdown-chevron"
+            class="icon"
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M6 9l6 6l6 -6" />
+          </svg>
+        </button>
+        <ul id="device-dropdown-list" aria-label="Capture sources"></ul>
+      </div>
+      <button id="connect-btn">
+        <svg
+          id=""
+          class="icon"
+          xmlns="http://www.w3.org/2000/svg"
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M9.785 6l8.215 8.215l-2.054 2.054a5.81 5.81 0 1 1 -8.215 -8.215l2.054 -2.054" />
+          <path d="M4 20l3.5 -3.5" />
+          <path d="M15 4l-3.5 3.5" />
+          <path d="M20 9l-3.5 3.5" />
+        </svg>
+        Connect
+      </button>
+    </div>
+
+    <!-- Video player -->
+    <div id="player-wrap" class="paused">
+      <video id="video" playsinline></video>
+
+      <div id="no-signal">
+        <div class="dot-grid">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+        Select a source above and click Connect
+      </div>
+
+      <div id="controls">
+        <button class="control-btn" id="play-btn" aria-label="Play / pause">
+          <svg
+            id="play-icon"
+            class="icon"
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M7 4v16l13 -8l-13 -8" />
+          </svg>
+        </button>
+
+        <div id="volume-group">
+          <button class="control-btn" id="mute-btn" aria-label="Mute / unmute">
+            <svg
+              id="volume-icon"
+              class="icon"
+              xmlns="http://www.w3.org/2000/svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M15 8a5 5 0 0 1 0 8" />
+              <path d="M17.7 5a9 9 0 0 1 0 14" />
+              <path d="M6 15h-2a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1h2l3.5 -4.5a.8 .8 0 0 1 1.5 .5v14a.8 .8 0 0 1 -1.5 .5l-3.5 -4.5" />
+            </svg>
+          </button>
+          <input type="range" id="volume-slider" min="0" max="100" step="1" aria-label="Volume" />
+          <span id="volume-label"></span>
+        </div>
+
+        <div class="spacer"></div>
+
+        <button class="control-btn" id="fullscreen-btn" aria-label="Toggle fullscreen">
+          <svg
+            id="fullscreen-icon"
+            class="icon"
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M16 4l4 0l0 4" />
+            <path d="M14 10l6 -6" />
+            <path d="M8 20l-4 0l0 -4" />
+            <path d="M4 20l6 -6" />
+            <path d="M16 20l4 0l0 -4" />
+            <path d="M14 14l6 6" />
+            <path d="M8 4l-4 0l0 4" />
+            <path d="M4 4l6 6" />
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <script>
+      const SVG_ICONS = {
+        playerPlay: `<svg class="icon" xmlns="http://www.w3.org/2000/svg" id="play-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg>`,
+        playerPause: `<svg class="icon" xmlns="http://www.w3.org/2000/svg" id="play-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M6 6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1zm8 0a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1z"/></svg>`,
+        volume: `<svg class="icon" xmlns="http://www.w3.org/2000/svg" id="volume-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M15 8a5 5 0 0 1 0 8m2.7-11a9 9 0 0 1 0 14M6 15H4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h2l3.5-4.5A.8.8 0 0 1 11 5v14a.8.8 0 0 1-1.5.5z"/></svg>`,
+        volume2: `<svg class="icon" xmlns="http://www.w3.org/2000/svg" id="volume-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M15 8a5 5 0 0 1 0 8m-9-1H4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h2l3.5-4.5A.8.8 0 0 1 11 5v14a.8.8 0 0 1-1.5.5z"/></svg>`,
+        volumeOff: `<svg class="icon" xmlns="http://www.w3.org/2000/svg" id="volume-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M15 8a5 5 0 0 1 1.912 4.934m-1.377 2.602A5 5 0 0 1 15 16m2.7-11a9 9 0 0 1 2.362 11.086m-1.676 2.299A9 9 0 0 1 17.7 19M9.069 5.054 9.5 4.5A.8.8 0 0 1 11 5v2m0 4v8a.8.8 0 0 1-1.5.5L6 15H4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h2l1.294-1.664"/></svg>`,
+        fullscreenEnter: `<svg class="icon" xmlns="http://www.w3.org/2000/svg" id="fullscreen-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M16 4h4v4m-6 2 6-6M8 20H4v-4m0 4 6-6m6 6h4v-4m-6-2 6 6M8 4H4v4m0-4 6 6"/></svg>`,
+        fullscreenExit: `<svg class="icon" xmlns="http://www.w3.org/2000/svg" id="fullscreen-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M5 9h4V5M3 3l6 6m-4 6h4v4m-6 2 6-6m10-6h-4V5m0 4 6-6m-2 12h-4v4m0-4 6 6"/></svg>`,
+        plug: `<svg class="icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M9.785 6 18 14.215l-2.054 2.054a5.81 5.81 0 1 1-8.215-8.215zM4 20l3.5-3.5M15 4l-3.5 3.5M20 9l-3.5 3.5"/></svg>`,
+        plugX: `<svg class="icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="M13.55 17.733a5.806 5.806 0 0 1-7.356-4.052 5.81 5.81 0 0 1 1.537-5.627L9.785 6l7.165 7.165M4 20l3.5-3.5M15 4l-3.5 3.5M20 9l-3.5 3.5M16 16l4 4m0-4-4 4"/></svg>`,
+      };
+
+      // -------------------------------------------------------
+      // Element references
+      // -------------------------------------------------------
+      const playerWrap = document.getElementById('player-wrap');
+      const video = document.getElementById('video');
+      const noSignal = document.getElementById('no-signal');
+      const controls = document.getElementById('controls');
+      const connectBtn = document.getElementById('connect-btn');
+      const dropdown = document.getElementById('device-dropdown');
+      const dropdownTrigger = document.getElementById('device-dropdown-trigger');
+      const dropdownLabel = document.getElementById('device-dropdown-label');
+      const dropdownList = document.getElementById('device-dropdown-list');
+      const playBtn = document.getElementById('play-btn');
+      const muteBtn = document.getElementById('mute-btn');
+      const volumeSlider = document.getElementById('volume-slider');
+      const volumeLabel = document.getElementById('volume-label');
+      const fullscreenBtn = document.getElementById('fullscreen-btn');
+
+      // -------------------------------------------------------
+      // State
+      // -------------------------------------------------------
+      let activeStream = null;
+      let activeDeviceId = null;
+      let isFullscreen = false;
+      let deviceGroupMap = {};
+
+      // Only these two devices are shown, in this order
+      const ALLOWED_SOURCES = [
+        { match: /usb video/i, name: 'Telecable' },
+        { match: /live gamer mini/i, name: 'Switch 2' },
+      ];
+
+      // -------------------------------------------------------
+      // Cursor & controls auto-hide
+      // -------------------------------------------------------
+      const HIDE_DELAY_MS = 2500,
+        CURSOR_LEAVE_DELAY_MS = 500;
+      let hideTimer = null;
+
+      function showControls() {
+        controls.classList.add('visible');
+        playerWrap.classList.remove('cursor-hidden');
+      }
+
+      function hideControls() {
+        // Don't hide while the video is paused — user needs access to play
+        if (playerWrap.classList.contains('paused')) return;
+        controls.classList.remove('visible');
+        playerWrap.classList.add('cursor-hidden');
+      }
+
+      function resetHideTimer() {
+        showControls();
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(hideControls, HIDE_DELAY_MS);
+      }
+
+      playerWrap.addEventListener('mousemove', resetHideTimer);
+
+      // Keep controls visible when the mouse is over them
+      controls.addEventListener('mouseenter', () => clearTimeout(hideTimer));
+      controls.addEventListener('mouseleave', resetHideTimer);
+
+      // When the cursor leaves the player, start the hide timer
+      // (don't instantly hide — the cursor may come back)
+      playerWrap.addEventListener('mouseleave', () => {
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(hideControls, CURSOR_LEAVE_DELAY_MS);
+      });
+
+      // -------------------------------------------------------
+      // Volume — restore from localStorage, default 100
+      // -------------------------------------------------------
+      function updateVolumeIcon(level, muted) {
+        const icon = muteBtn.querySelector('.icon');
+        if (muted || level === 0) {
+          icon.outerHTML = SVG_ICONS.volumeOff;
+        } else if (level < 40) {
+          icon.outerHTML = SVG_ICONS.volume2;
+        } else {
+          icon.outerHTML = SVG_ICONS.volume;
+        }
+      }
+
+      function applyVolume(level) {
+        video.volume = level / 100;
+        volumeSlider.value = level;
+        volumeLabel.textContent = level + '%';
+        updateVolumeIcon(level, video.muted);
+      }
+
+      const savedVolume = Number.parseInt(localStorage.getItem('captureVol') ?? '100', 10);
+      applyVolume(savedVolume);
+
+      volumeSlider.addEventListener('input', () => {
+        const level = Number.parseInt(volumeSlider.value, 10);
+        video.volume = level / 100;
+        video.muted = false;
+        volumeLabel.textContent = level + '%';
+        updateVolumeIcon(level, false);
+        localStorage.setItem('captureVol', level);
+      });
+
+      muteBtn.addEventListener('click', () => {
+        video.muted = !video.muted;
+        const level = Number.parseInt(volumeSlider.value, 10);
+        updateVolumeIcon(level, video.muted);
+        volumeLabel.textContent = video.muted ? '0%' : level + '%';
+      });
+
+      // -------------------------------------------------------
+      // Device enumeration
+      // -------------------------------------------------------
+      async function enumerateDevices() {
+        // Request permission first so device labels are populated.
+        // A denial (NotAllowedError) is expected if the user blocks access —
+        // enumeration still runs, but device labels will be empty.
+        try {
+          const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          tempStream.getTracks().forEach((track) => track.stop());
+        } catch (permissionError) {
+          console.info('Camera/microphone permission denied or unavailable:', permissionError.message);
+        }
+
+        const allDevices = await navigator.mediaDevices.enumerateDevices();
+        const videoInputs = allDevices.filter((d) => d.kind === 'videoinput');
+        const audioInputs = allDevices.filter((d) => d.kind === 'audioinput');
+
+        // Build a groupId → audio device lookup for automatic audio pairing
+        const audioByGroup = {};
+        audioInputs.forEach((audio) => {
+          if (audio.groupId) audioByGroup[audio.groupId] = audio;
+        });
+
+        // Prefer the named USB audio device for the USB Video capture card
+        const usbAudioDevice = audioInputs.find((a) => /digital audio interface.*usb digital audio/i.test(a.label));
+
+        deviceGroupMap = {};
+        videoInputs.forEach((v) => {
+          const isUsbVideo = /usb video/i.test(v.label);
+          deviceGroupMap[v.deviceId] = {
+            groupId: v.groupId,
+            audioDevice: isUsbVideo && usbAudioDevice ? usbAudioDevice : audioByGroup[v.groupId] || null,
+          };
+        });
+
+        // Rebuild the custom dropdown list, keeping the current selection
+        const previousValue = dropdown.dataset.value ?? '';
+        dropdownList.innerHTML = '';
+        let foundAny = false;
+
+        ALLOWED_SOURCES.forEach(({ match, name }) => {
+          const found = videoInputs.find((v) => match.test(v.label));
+          if (!found) return;
+
+          foundAny = true;
+
+          // <li> is just a non-interactive layout wrapper.
+          // The <button> inside it is the actual interactive option.
+          const listItem = document.createElement('li');
+          const option = document.createElement('button');
+
+          option.type = 'button';
+          option.className = 'dropdown-option';
+          option.dataset.value = found.deviceId;
+          option.textContent = name;
+
+          if (found.deviceId === previousValue) {
+            option.setAttribute('aria-selected', 'true');
+            dropdownLabel.textContent = name;
+            dropdown.dataset.value = found.deviceId;
+          } else {
+            option.setAttribute('aria-selected', 'false');
+          }
+
+          option.addEventListener('click', () => selectDropdownOption(option));
+          listItem.appendChild(option);
+          dropdownList.appendChild(listItem);
+        });
+
+        if (!foundAny) {
+          const listItem = document.createElement('li');
+          const empty = document.createElement('button');
+          empty.type = 'button';
+          empty.className = 'dropdown-option dropdown-option--empty';
+          empty.disabled = true;
+          empty.textContent = 'No capture devices found';
+          listItem.appendChild(empty);
+          dropdownList.appendChild(listItem);
+        }
+      }
+
+      // -------------------------------------------------------
+      // Custom dropdown interaction
+      // -------------------------------------------------------
+      function selectDropdownOption(option) {
+        const value = option.dataset.value;
+        const label = option.textContent;
+
+        // Update selection state on all options
+        dropdownList.querySelectorAll('.dropdown-option').forEach((opt) => {
+          opt.setAttribute('aria-selected', opt === option ? 'true' : 'false');
+        });
+
+        // Update the trigger label and stored value
+        dropdownLabel.textContent = label;
+        dropdown.dataset.value = value;
+
+        closeDropdown();
+        dropdownTrigger.focus();
+
+        // Update connect button if we just switched source while connected
+        if (activeDeviceId) {
+          setConnectBtnMode(value === activeDeviceId ? 'disconnect' : 'connect');
+        }
+      }
+
+      function openDropdown() {
+        dropdown.setAttribute('aria-expanded', 'true');
+      }
+
+      function closeDropdown() {
+        dropdown.setAttribute('aria-expanded', 'false');
+      }
+
+      function toggleDropdown() {
+        const isOpen = dropdown.getAttribute('aria-expanded') === 'true';
+        isOpen ? closeDropdown() : openDropdown();
+      }
+
+      dropdownTrigger.addEventListener('click', toggleDropdown);
+
+      // Close on Escape, regardless of which element has focus
+      dropdown.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeDropdown();
+          dropdownTrigger.focus();
+        }
+      });
+
+      // Close when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!dropdown.contains(e.target)) closeDropdown();
+      });
+
+      // -------------------------------------------------------
+      // Connect / disconnect
+      // -------------------------------------------------------
+      function setConnectBtnMode(mode) {
+        connectBtn.innerHTML = mode === 'disconnect' ? SVG_ICONS.plugX + ' Disconnect' : SVG_ICONS.plug + ' Connect';
+      }
+
+      async function connectDevice() {
+        const deviceId = dropdown.dataset.value ?? '';
+        if (!deviceId) return;
+
+        // Clicking Connect on the already-connected device disconnects it
+        if (deviceId === activeDeviceId) {
+          disconnectDevice();
+          return;
+        }
+
+        // Stop any existing stream before switching
+        if (activeStream) {
+          activeStream.getTracks().forEach((track) => track.stop());
+          activeStream = null;
+        }
+
+        const deviceInfo = deviceGroupMap[deviceId];
+        const audioConstraints = deviceInfo?.audioDevice
+          ? {
+              deviceId: { exact: deviceInfo.audioDevice.deviceId },
+              sampleRate: 48000,
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+            }
+          : {
+              groupId: deviceInfo?.groupId,
+              sampleRate: 48000,
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+            };
+
+        try {
+          activeStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              deviceId: { exact: deviceId },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            },
+            audio: audioConstraints,
+          });
+
+          video.srcObject = activeStream;
+          video.volume = Number.parseInt(volumeSlider.value, 10) / 100;
+          await video.play();
+
+          activeDeviceId = deviceId;
+          noSignal.style.display = 'none';
+          setConnectBtnMode('disconnect');
+        } catch (error) {
+          alert('Could not connect: ' + error.message);
+          console.error(error);
+        }
+      }
+
+      function disconnectDevice() {
+        if (activeStream) {
+          activeStream.getTracks().forEach((track) => track.stop());
+          activeStream = null;
+        }
+
+        video.srcObject = null;
+        activeDeviceId = null;
+        noSignal.style.display = 'flex';
+        playerWrap.classList.add('paused');
+        showControls();
+        clearTimeout(hideTimer);
+        setConnectBtnMode('connect');
+      }
+
+      connectBtn.addEventListener('click', connectDevice);
+
+      // -------------------------------------------------------
+      // Playback
+      // -------------------------------------------------------
+      playBtn.addEventListener('click', () => {
+        if (!video.srcObject) return;
+        video.paused ? video.play() : video.pause();
+      });
+
+      video.addEventListener('play', () => {
+        playBtn.querySelector('.icon').outerHTML = SVG_ICONS.playerPause;
+        playerWrap.classList.remove('paused');
+        // Start the hide timer immediately on play — don't wait for mouse movement
+        resetHideTimer();
+      });
+
+      video.addEventListener('pause', () => {
+        playBtn.querySelector('.icon').outerHTML = SVG_ICONS.playerPlay;
+        playerWrap.classList.add('paused');
+        // Always show controls when paused
+        showControls();
+        clearTimeout(hideTimer);
+      });
+
+      // -------------------------------------------------------
+      // Fullscreen
+      // -------------------------------------------------------
+      function enterFullscreen() {
+        const fn = playerWrap.requestFullscreen || playerWrap.webkitRequestFullscreen;
+        fn.call(playerWrap);
+        isFullscreen = true;
+        fullscreenBtn.querySelector('.icon').outerHTML = SVG_ICONS.fullscreenExit;
+        // playerWrap.classList.add('fullscreen');
+      }
+
+      function exitFullscreen() {
+        const fn = document.exitFullscreen || document.webkitExitFullscreen;
+        fn.call(document);
+        isFullscreen = false;
+        fullscreenBtn.querySelector('.icon').outerHTML = SVG_ICONS.fullscreenEnter;
+      }
+
+      function toggleFullscreen() {
+        isFullscreen ? exitFullscreen() : enterFullscreen();
+      }
+
+      fullscreenBtn.addEventListener('click', toggleFullscreen);
+
+      // Double-click the video to toggle fullscreen
+      playerWrap.addEventListener('dblclick', toggleFullscreen);
+
+      // Sync state if the user exits fullscreen via Esc
+      document.addEventListener('fullscreenchange', () => {
+        if (!document.fullscreenElement) {
+          isFullscreen = false;
+          fullscreenBtn.querySelector('.icon').outerHTML = SVG_ICONS.fullscreenEnter;
+          playerWrap.classList.remove('fullscreen');
+        }
+      });
+
+      // -------------------------------------------------------
+      // Keyboard shortcuts
+      // -------------------------------------------------------
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'f' || e.key === 'F') {
+          toggleFullscreen();
+        }
+        if ((e.key === ' ' || e.key === 'k') && video.srcObject) {
+          e.preventDefault();
+          playBtn.click();
+        }
+        if (e.key === 'm' || e.key === 'M') {
+          muteBtn.click();
+        }
+      });
+
+      // -------------------------------------------------------
+      // Init
+      // -------------------------------------------------------
+      navigator.mediaDevices.addEventListener('devicechange', enumerateDevices);
+
+      enumerateDevices();
+    </script>
+  </body>
+</html>
