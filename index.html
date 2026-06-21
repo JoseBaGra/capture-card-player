@@ -3,13 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Capture Card Player</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <style>
       /* -------------------------------------------------------
        Catppuccin Macchiato palette
        https://catppuccin.com/palette
-      ------------------------------------------------------- */
+    ------------------------------------------------------- */
       :root {
         --ctp-base: #24273a;
         --ctp-mantle: #1e2030;
@@ -20,22 +23,9 @@
         --ctp-overlay0: #6e738d;
         --ctp-overlay2: #939ab7;
         --ctp-text: #cad3f5;
-        --ctp-lavender: #b7bdf8; /* kept for reference */
         --ctp-teal: #8bd5ca; /* accent color */
       }
 
-      /* -------------------------------------------------------
-       Icons — inlined SVGs inherit color from their parent button
-      ------------------------------------------------------- */
-      .icon {
-        display: block;
-        flex-shrink: 0;
-        /* Inherits stroke color from the parent element */
-      }
-
-      /* -------------------------------------------------------
-       Reset & base
-      ------------------------------------------------------- */
       * {
         box-sizing: border-box;
         margin: 0;
@@ -55,35 +45,65 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
+        justify-content: flex-start;
         gap: 12px;
         padding: 16px;
       }
 
-      /* -------------------------------------------------------
-       Device selector bar
-      ------------------------------------------------------- */
-      #device-bar {
+      .icon {
+        display: block;
+        flex-shrink: 0;
+      }
+
+      .toolbar {
+        position: relative;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        width: 100%;
+      }
+
+      .toolbar__row {
         display: flex;
         align-items: center;
         gap: 10px;
         width: 100%;
-        /* Match the max width of the video at 16:9 given the available height */
-        max-width: calc((100vh - 16px - 12px - 36px - 12px - 16px) * (16 / 9));
       }
 
-      /* Custom dropdown */
-      #device-dropdown {
-        flex: 1;
+      .toolbar__sources {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        width: 100%;
+      }
+
+      .toolbar__source-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+      }
+
+      .toolbar__source-row--hidden {
+        display: none;
+      }
+
+      .dropdown {
         position: relative;
+        flex: 1;
+        min-width: 0;
       }
 
-      #device-dropdown-trigger {
-        /* Reset native <button> styling */
+      .dropdown--layout {
+        flex: 0 0 auto;
+        width: 220px;
+      }
+
+      .dropdown__trigger {
         width: 100%;
         font-family: inherit;
         outline: none;
-
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -96,25 +116,33 @@
         font-size: 13px;
         cursor: pointer;
         user-select: none;
+        overflow: hidden;
+        white-space: nowrap;
         transition: border-color 0.15s;
       }
 
-      #device-dropdown-trigger:hover,
-      #device-dropdown[aria-expanded='true'] #device-dropdown-trigger {
+      .dropdown__trigger-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .dropdown__trigger:hover,
+      .dropdown--open .dropdown__trigger {
         border-color: var(--ctp-surface2);
       }
 
-      #device-dropdown-chevron {
+      .dropdown__chevron {
         opacity: 0.6;
         transition: transform 0.15s;
         flex-shrink: 0;
       }
 
-      #device-dropdown[aria-expanded='true'] #device-dropdown-chevron {
+      .dropdown--open .dropdown__chevron {
         transform: rotate(180deg);
       }
 
-      #device-dropdown-list {
+      .dropdown__list {
         display: none;
         position: absolute;
         top: calc(100% + 4px);
@@ -125,57 +153,60 @@
         border-radius: 8px;
         padding: 4px;
         list-style: none;
-        z-index: 100;
+        z-index: 20;
         overflow: hidden;
       }
 
-      #device-dropdown[aria-expanded='true'] #device-dropdown-list {
+      .dropdown--layout .dropdown__list {
+        min-width: 100%;
+        width: max-content;
+      }
+
+      .dropdown--open .dropdown__list {
         display: block;
       }
 
-      /* Each <li> is just a layout container; the <button> inside is the
-       actual interactive element, so it carries the visual styling. */
-      #device-dropdown-list li {
+      .dropdown__item {
         display: block;
       }
 
-      #device-dropdown-list .dropdown-option {
+      .dropdown__option {
         width: 100%;
         font-family: inherit;
         text-align: left;
         outline: none;
-
         display: block;
         background: none;
         border: none;
         padding: 7px 10px;
         border-radius: 6px;
         font-size: 13px;
+        white-space: nowrap;
         cursor: pointer;
         color: var(--ctp-text);
         transition: background-color 0.1s;
       }
 
-      #device-dropdown-list .dropdown-option:hover,
-      #device-dropdown-list .dropdown-option:focus-visible,
-      #device-dropdown-list .dropdown-option[aria-selected='true'] {
+      .dropdown__option:hover,
+      .dropdown__option:focus-visible,
+      .dropdown__option--selected {
         background-color: var(--ctp-surface1);
       }
 
-      #device-dropdown-list .dropdown-option[aria-selected='true'] {
+      .dropdown__option--selected {
         color: var(--ctp-teal);
       }
 
-      #device-dropdown-list .dropdown-option--empty {
+      .dropdown__option--empty {
         color: var(--ctp-overlay0);
         cursor: default;
       }
 
-      #device-dropdown-list .dropdown-option--empty:hover {
+      .dropdown__option--empty:hover {
         background-color: transparent;
       }
 
-      #connect-btn {
+      .connect-btn {
         background-color: var(--ctp-surface0);
         border: 1px solid var(--ctp-surface1);
         color: var(--ctp-text);
@@ -189,52 +220,74 @@
         justify-content: center;
         gap: 6px;
         white-space: nowrap;
-        /* Fixed width so Connect and Disconnect never shift layout */
+        flex-shrink: 0;
         min-width: 130px;
         transition:
           background-color 0.15s,
           border-color 0.15s;
       }
 
-      #connect-btn:hover {
+      .connect-btn:hover {
         background-color: var(--ctp-surface1);
         border-color: var(--ctp-surface2);
       }
 
-      #connect-btn i {
-        font-size: 15px;
+      .stage-wrap {
+        position: relative;
+        z-index: 1;
+        flex: 1;
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 0;
       }
 
-      /* -------------------------------------------------------
-       Player wrapper — 16:9 aspect ratio, fills available space
-      ------------------------------------------------------- */
-      #player-wrap {
+      .stage {
         position: relative;
-        /*
-        Fit inside the remaining vertical space while keeping 16:9.
-        Available height = 100vh minus: top padding (16) + bar height (36) +
-        gap (12) + bottom padding (16) = 80px total chrome.
-      */
-        max-height: calc(100vh - 80px);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
         width: 100%;
-        max-width: calc((100vh - 80px) * (16 / 9) - 16px);
+      }
+
+      .player {
+        position: relative;
         aspect-ratio: 16 / 9;
         background-color: var(--ctp-crust);
         border-radius: 10px;
         overflow: hidden;
         cursor: default;
-        transition: cursor 0.1s;
       }
 
-      /* Hide the cursor when the player signals it should be hidden */
-      #player-wrap.cursor-hidden {
+      .player--hidden {
+        display: none;
+      }
+
+      .player--cursor-hidden {
         cursor: none;
       }
 
-      /* -------------------------------------------------------
-       Video element — fills the wrapper
-      ------------------------------------------------------- */
-      #video {
+      .player--fullscreen {
+        position: fixed;
+        inset: 0;
+        border-radius: 0;
+        z-index: 100;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      .player--narrow .player__volume-slider {
+        width: 48px;
+      }
+
+      .player--narrow .player__controls {
+        padding: 8px 10px 10px;
+        gap: 6px;
+      }
+
+      .player__video {
         width: 100%;
         height: 100%;
         display: block;
@@ -242,10 +295,7 @@
         background-color: #000;
       }
 
-      /* -------------------------------------------------------
-       No-signal overlay
-      ------------------------------------------------------- */
-      #no-signal {
+      .player__no-signal {
         position: absolute;
         inset: 0;
         display: flex;
@@ -255,17 +305,19 @@
         gap: 10px;
         color: var(--ctp-overlay0);
         font-size: 13px;
+        text-align: center;
+        padding: 0 16px;
         pointer-events: none;
       }
 
-      .dot-grid {
+      .player__no-signal-dots {
         display: grid;
         grid-template-columns: repeat(5, 8px);
         gap: 5px;
         margin-bottom: 6px;
       }
 
-      .dot {
+      .player__no-signal-dot {
         width: 8px;
         height: 8px;
         border-radius: 50%;
@@ -273,10 +325,10 @@
         animation: blink 1.4s infinite both;
       }
 
-      .dot:nth-child(odd) {
+      .player__no-signal-dot:nth-child(odd) {
         animation-delay: 0.2s;
       }
-      .dot:nth-child(3) {
+      .player__no-signal-dot:nth-child(3) {
         animation-delay: 0.5s;
       }
 
@@ -290,16 +342,13 @@
         }
       }
 
-      /* -------------------------------------------------------
-       Playback controls bar
-      ------------------------------------------------------- */
-      #controls {
+      .player__controls {
         position: absolute;
         bottom: 0;
         left: 0;
         right: 0;
         padding: 12px 16px 14px;
-        background: linear-gradient(transparent, rgba(24, 25, 38, 0.9));
+        background: linear-gradient(to bottom, transparent, rgba(24, 25, 38, 0.55) 40%, rgba(24, 25, 38, 0.92) 100%);
         display: flex;
         align-items: center;
         gap: 10px;
@@ -307,43 +356,38 @@
         transition: opacity 0.25s;
       }
 
-      #controls.visible {
+      .player__controls--visible {
         opacity: 1;
       }
 
-      .control-btn {
-        background: none;
+      .player__control-btn {
+        background-color: rgba(24, 25, 38, 0.55);
         border: none;
         color: var(--ctp-text);
         cursor: pointer;
-        padding: 4px;
+        padding: 6px;
         display: flex;
         align-items: center;
         justify-content: center;
         border-radius: 6px;
-        opacity: 0.8;
-        transition:
-          opacity 0.15s,
-          background-color 0.15s;
-      }
-
-      .control-btn:hover {
         opacity: 1;
-        background-color: rgba(202, 211, 245, 0.1);
+        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+        transition: background-color 0.15s;
+        flex-shrink: 0;
       }
 
-      .control-btn i {
-        font-size: 18px;
-        line-height: 1;
+      .player__control-btn:hover {
+        background-color: rgba(54, 58, 79, 0.85);
       }
 
-      #volume-group {
+      .player__volume-group {
         display: flex;
         align-items: center;
         gap: 6px;
+        min-width: 0;
       }
 
-      #volume-slider {
+      .player__volume-slider {
         -webkit-appearance: none;
         appearance: none;
         width: 80px;
@@ -354,7 +398,7 @@
         cursor: pointer;
       }
 
-      #volume-slider::-webkit-slider-thumb {
+      .player__volume-slider::-webkit-slider-thumb {
         -webkit-appearance: none;
         width: 13px;
         height: 13px;
@@ -363,7 +407,7 @@
         cursor: pointer;
       }
 
-      #volume-slider::-moz-range-thumb {
+      .player__volume-slider::-moz-range-thumb {
         width: 13px;
         height: 13px;
         border-radius: 50%;
@@ -372,119 +416,30 @@
         cursor: pointer;
       }
 
-      #volume-label {
+      .player__volume-label {
         color: var(--ctp-overlay2);
         font-size: 11px;
         min-width: 30px;
         text-align: right;
         font-variant-numeric: tabular-nums;
+        flex-shrink: 0;
       }
 
-      .spacer {
+      .player__spacer {
         flex: 1;
       }
     </style>
   </head>
   <body>
-    <!-- Device selector -->
-    <div id="device-bar">
-      <!-- Custom dropdown replaces native <select> for full styling control -->
-      <div id="device-dropdown" aria-haspopup="listbox" aria-expanded="false">
-        <button type="button" id="device-dropdown-trigger" aria-label="Select a source">
-          <span id="device-dropdown-label">— Select a source —</span>
-          <svg
-            id="device-dropdown-chevron"
-            class="icon"
-            xmlns="http://www.w3.org/2000/svg"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M6 9l6 6l6 -6" />
-          </svg>
-        </button>
-        <ul id="device-dropdown-list" aria-label="Capture sources"></ul>
-      </div>
-      <button id="connect-btn">
-        <svg
-          id=""
-          class="icon"
-          xmlns="http://www.w3.org/2000/svg"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M9.785 6l8.215 8.215l-2.054 2.054a5.81 5.81 0 1 1 -8.215 -8.215l2.054 -2.054" />
-          <path d="M4 20l3.5 -3.5" />
-          <path d="M15 4l-3.5 3.5" />
-          <path d="M20 9l-3.5 3.5" />
-        </svg>
-        Connect
-      </button>
-    </div>
-
-    <!-- Video player -->
-    <div id="player-wrap" class="paused">
-      <video id="video" playsinline></video>
-
-      <div id="no-signal">
-        <div class="dot-grid">
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-        </div>
-        Select a source above and click Connect
-      </div>
-
-      <div id="controls">
-        <button class="control-btn" id="play-btn" aria-label="Play / pause">
-          <svg
-            id="play-icon"
-            class="icon"
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M7 4v16l13 -8l-13 -8" />
-          </svg>
-        </button>
-
-        <div id="volume-group">
-          <button class="control-btn" id="mute-btn" aria-label="Mute / unmute">
+    <div class="toolbar">
+      <div class="toolbar__row">
+        <div class="dropdown dropdown--layout" data-role="layout-dropdown" aria-haspopup="listbox" aria-expanded="false">
+          <button type="button" class="dropdown__trigger" data-role="layout-trigger" aria-label="Select layout">
             <svg
-              id="volume-icon"
               class="icon"
               xmlns="http://www.w3.org/2000/svg"
-              width="18"
-              height="18"
+              width="16"
+              height="16"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -492,41 +447,307 @@
               stroke-linecap="round"
               stroke-linejoin="round"
             >
-              <path d="M15 8a5 5 0 0 1 0 8" />
-              <path d="M17.7 5a9 9 0 0 1 0 14" />
-              <path d="M6 15h-2a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1h2l3.5 -4.5a.8 .8 0 0 1 1.5 .5v14a.8 .8 0 0 1 -1.5 .5l-3.5 -4.5" />
+              <path d="M4 4m0 1a1 1 0 0 1 1 -1h14a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-14a1 1 0 0 1 -1 -1z" />
+              <path d="M12 4l0 16" />
+            </svg>
+            <span class="dropdown__trigger-label" data-role="layout-trigger-label">Single source</span>
+            <svg
+              class="icon dropdown__chevron"
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M6 9l6 6l6 -6" />
             </svg>
           </button>
-          <input type="range" id="volume-slider" min="0" max="100" step="1" aria-label="Volume" />
-          <span id="volume-label"></span>
+          <ul class="dropdown__list" data-role="layout-list" aria-label="Layout options"></ul>
         </div>
 
-        <div class="spacer"></div>
+        <div class="toolbar__spacer"></div>
 
-        <button class="control-btn" id="fullscreen-btn" aria-label="Toggle fullscreen">
-          <svg
-            id="fullscreen-icon"
-            class="icon"
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M16 4l4 0l0 4" />
-            <path d="M14 10l6 -6" />
-            <path d="M8 20l-4 0l0 -4" />
-            <path d="M4 20l6 -6" />
-            <path d="M16 20l4 0l0 -4" />
-            <path d="M14 14l6 6" />
-            <path d="M8 4l-4 0l0 4" />
-            <path d="M4 4l6 6" />
-          </svg>
-        </button>
+        <div class="toolbar__sources">
+          <div class="toolbar__source-row" data-role="slot-1-row">
+            <div class="dropdown" data-role="device-dropdown" data-slot="1" aria-haspopup="listbox" aria-expanded="false">
+              <button type="button" class="dropdown__trigger" aria-label="Select a source for slot 1">
+                <span class="dropdown__trigger-label">— Select a source —</span>
+                <svg
+                  class="icon dropdown__chevron"
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M6 9l6 6l6 -6" />
+                </svg>
+              </button>
+              <ul class="dropdown__list" aria-label="Capture sources"></ul>
+            </div>
+            <button class="connect-btn" data-role="connect-btn" data-slot="1">
+              <svg
+                class="icon connect-btn__icon"
+                xmlns="http://www.w3.org/2000/svg"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M9.785 6l8.215 8.215l-2.054 2.054a5.81 5.81 0 1 1 -8.215 -8.215l2.054 -2.054" />
+                <path d="M4 20l3.5 -3.5" />
+                <path d="M15 4l-3.5 3.5" />
+                <path d="M20 9l-3.5 3.5" />
+              </svg>
+              <span class="connect-btn__label">Connect</span>
+            </button>
+          </div>
+
+          <div class="toolbar__source-row toolbar__source-row--hidden" data-role="slot-2-row">
+            <div class="dropdown" data-role="device-dropdown" data-slot="2" aria-haspopup="listbox" aria-expanded="false">
+              <button type="button" class="dropdown__trigger" aria-label="Select a source for slot 2">
+                <span class="dropdown__trigger-label">— Select a source —</span>
+                <svg
+                  class="icon dropdown__chevron"
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M6 9l6 6l6 -6" />
+                </svg>
+              </button>
+              <ul class="dropdown__list" aria-label="Capture sources"></ul>
+            </div>
+            <button class="connect-btn" data-role="connect-btn" data-slot="2">
+              <svg
+                class="icon connect-btn__icon"
+                xmlns="http://www.w3.org/2000/svg"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M9.785 6l8.215 8.215l-2.054 2.054a5.81 5.81 0 1 1 -8.215 -8.215l2.054 -2.054" />
+                <path d="M4 20l3.5 -3.5" />
+                <path d="M15 4l-3.5 3.5" />
+                <path d="M20 9l-3.5 3.5" />
+              </svg>
+              <span class="connect-btn__label">Connect</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage-wrap">
+      <div class="stage" data-role="stage" data-layout="single">
+        <div class="player player--paused" data-slot="1">
+          <video class="player__video" playsinline></video>
+
+          <div class="player__no-signal">
+            <div class="player__no-signal-dots">
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+            </div>
+            <span>Select a source above and click Connect</span>
+          </div>
+
+          <div class="player__controls">
+            <button class="player__control-btn" data-role="play-btn" aria-label="Play / pause">
+              <svg
+                class="icon"
+                xmlns="http://www.w3.org/2000/svg"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M7 4v16l13 -8l-13 -8" />
+              </svg>
+            </button>
+
+            <div class="player__volume-group">
+              <button class="player__control-btn" data-role="mute-btn" aria-label="Mute / unmute">
+                <svg
+                  class="icon"
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M15 8a5 5 0 0 1 0 8" />
+                  <path d="M17.7 5a9 9 0 0 1 0 14" />
+                  <path d="M6 15h-2a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1h2l3.5 -4.5a.8 .8 0 0 1 1.5 .5v14a.8 .8 0 0 1 -1.5 .5l-3.5 -4.5" />
+                </svg>
+              </button>
+              <input type="range" class="player__volume-slider" data-role="volume-slider" min="0" max="100" step="1" aria-label="Volume" />
+              <span class="player__volume-label" data-role="volume-label"></span>
+            </div>
+
+            <div class="player__spacer"></div>
+
+            <button class="player__control-btn" data-role="fullscreen-btn" aria-label="Toggle fullscreen">
+              <svg
+                class="icon"
+                xmlns="http://www.w3.org/2000/svg"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M16 4l4 0l0 4" />
+                <path d="M14 10l6 -6" />
+                <path d="M8 20l-4 0l0 -4" />
+                <path d="M4 20l6 -6" />
+                <path d="M16 20l4 0l0 -4" />
+                <path d="M14 14l6 6" />
+                <path d="M8 4l-4 0l0 4" />
+                <path d="M4 4l6 6" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="player player--paused player--hidden" data-slot="2">
+          <video class="player__video" playsinline></video>
+
+          <div class="player__no-signal">
+            <div class="player__no-signal-dots">
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+              <div class="player__no-signal-dot"></div>
+            </div>
+            <span>Select a source above and click Connect</span>
+          </div>
+
+          <div class="player__controls">
+            <button class="player__control-btn" data-role="play-btn" aria-label="Play / pause">
+              <svg
+                class="icon"
+                xmlns="http://www.w3.org/2000/svg"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M7 4v16l13 -8l-13 -8" />
+              </svg>
+            </button>
+
+            <div class="player__volume-group">
+              <button class="player__control-btn" data-role="mute-btn" aria-label="Mute / unmute">
+                <svg
+                  class="icon"
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M15 8a5 5 0 0 1 0 8" />
+                  <path d="M17.7 5a9 9 0 0 1 0 14" />
+                  <path d="M6 15h-2a1 1 0 0 1 -1 -1v-4a1 1 0 0 1 1 -1h2l3.5 -4.5a.8 .8 0 0 1 1.5 .5v14a.8 .8 0 0 1 -1.5 .5l-3.5 -4.5" />
+                </svg>
+              </button>
+              <input type="range" class="player__volume-slider" data-role="volume-slider" min="0" max="100" step="1" aria-label="Volume" />
+              <span class="player__volume-label" data-role="volume-label"></span>
+            </div>
+
+            <div class="player__spacer"></div>
+
+            <button class="player__control-btn" data-role="fullscreen-btn" aria-label="Toggle fullscreen">
+              <svg
+                class="icon"
+                xmlns="http://www.w3.org/2000/svg"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M16 4l4 0l0 4" />
+                <path d="M14 10l6 -6" />
+                <path d="M8 20l-4 0l0 -4" />
+                <path d="M4 20l6 -6" />
+                <path d="M16 20l4 0l0 -4" />
+                <path d="M14 14l6 6" />
+                <path d="M8 4l-4 0l0 4" />
+                <path d="M4 4l6 6" />
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -544,122 +765,368 @@
       };
 
       // -------------------------------------------------------
-      // Element references
+      // Only these two devices are shown as selectable sources
       // -------------------------------------------------------
-      const playerWrap = document.getElementById('player-wrap');
-      const video = document.getElementById('video');
-      const noSignal = document.getElementById('no-signal');
-      const controls = document.getElementById('controls');
-      const connectBtn = document.getElementById('connect-btn');
-      const dropdown = document.getElementById('device-dropdown');
-      const dropdownTrigger = document.getElementById('device-dropdown-trigger');
-      const dropdownLabel = document.getElementById('device-dropdown-label');
-      const dropdownList = document.getElementById('device-dropdown-list');
-      const playBtn = document.getElementById('play-btn');
-      const muteBtn = document.getElementById('mute-btn');
-      const volumeSlider = document.getElementById('volume-slider');
-      const volumeLabel = document.getElementById('volume-label');
-      const fullscreenBtn = document.getElementById('fullscreen-btn');
-
-      // -------------------------------------------------------
-      // State
-      // -------------------------------------------------------
-      let activeStream = null;
-      let activeDeviceId = null;
-      let isFullscreen = false;
-      let deviceGroupMap = {};
-
-      // Only these two devices are shown, in this order
       const ALLOWED_SOURCES = [
         { match: /usb video/i, name: 'Telecable' },
         { match: /live gamer mini/i, name: 'Switch 2' },
       ];
 
-      // -------------------------------------------------------
-      // Cursor & controls auto-hide
-      // -------------------------------------------------------
-      const HIDE_DELAY_MS = 2500,
-        CURSOR_LEAVE_DELAY_MS = 500;
-      let hideTimer = null;
+      // Available stage layouts. heightRatio expresses each player's
+      // relative HEIGHT — since both players share the same 16:9 ratio,
+      // a taller player is also proportionally wider, so the height
+      // ratio doubles as the effective width split (e.g. 70/30).
+      const LAYOUTS = [
+        { id: 'single', label: 'Single source', slots: 1 },
+        { id: '50-50', label: 'Side by side — 50 / 50', slots: 2, heightRatio: [1, 1] },
+        { id: '70-30', label: 'Side by side — 70 / 30', slots: 2, heightRatio: [7, 3] },
+        { id: '30-70', label: 'Side by side — 30 / 70', slots: 2, heightRatio: [3, 7] },
+      ];
 
-      function showControls() {
-        controls.classList.add('visible');
-        playerWrap.classList.remove('cursor-hidden');
+      const HIDE_DELAY_MS = 2500;
+
+      // -------------------------------------------------------
+      // Multi-source loudness compensation.
+      // Two simultaneous audio streams sum acoustically, so they read
+      // as louder than one stream ever does at the same slider
+      // position. When two players are both actively playing audio,
+      // each one's effective output is scaled down so the combined
+      // loudness roughly matches a single source — without changing
+      // what the slider shows or what's persisted to localStorage.
+      //
+      // slotRegistry is populated incrementally as each slot is
+      // created (see createSlot below). It must be declared before
+      // createSlot runs, since applyVolume — called during slot
+      // setup — reads loudnessFactor() immediately.
+      // -------------------------------------------------------
+      const SINGLE_SOURCE_FACTOR = 1;
+      const DUAL_SOURCE_FACTOR = 0.7;
+      const slotRegistry = [];
+
+      function loudnessFactor() {
+        const activeAudioSlots = slotRegistry.filter((s) => s.activeStream && !s.video.muted).length;
+        return activeAudioSlots >= 2 ? DUAL_SOURCE_FACTOR : SINGLE_SOURCE_FACTOR;
       }
 
-      function hideControls() {
-        // Don't hide while the video is paused — user needs access to play
-        if (playerWrap.classList.contains('paused')) return;
-        controls.classList.remove('visible');
-        playerWrap.classList.add('cursor-hidden');
+      function applyLoudnessCompensation() {
+        slotRegistry.forEach((slot) => {
+          const level = Number.parseInt(slot.volumeSlider.value, 10);
+          slot.applyVolume(level);
+        });
       }
 
-      function resetHideTimer() {
-        showControls();
-        clearTimeout(hideTimer);
-        hideTimer = setTimeout(hideControls, HIDE_DELAY_MS);
-      }
-
-      playerWrap.addEventListener('mousemove', resetHideTimer);
-
-      // Keep controls visible when the mouse is over them
-      controls.addEventListener('mouseenter', () => clearTimeout(hideTimer));
-      controls.addEventListener('mouseleave', resetHideTimer);
-
-      // When the cursor leaves the player, start the hide timer
-      // (don't instantly hide — the cursor may come back)
-      playerWrap.addEventListener('mouseleave', () => {
-        clearTimeout(hideTimer);
-        hideTimer = setTimeout(hideControls, CURSOR_LEAVE_DELAY_MS);
-      });
+      // -------------------------------------------------------
+      // deviceGroupMap: deviceId -> { groupId, audioDevice }
+      // Shared across both slots — built once per enumeration.
+      // -------------------------------------------------------
+      let deviceGroupMap = {};
 
       // -------------------------------------------------------
-      // Volume — restore from localStorage, default 100
+      // Slot — wraps all state and DOM refs for one player instance.
+      // Two slots are created up front; slot 2 stays hidden until a
+      // split layout is selected.
       // -------------------------------------------------------
-      function updateVolumeIcon(level, muted) {
-        const icon = muteBtn.querySelector('.icon');
-        if (muted || level === 0) {
-          icon.outerHTML = SVG_ICONS.volumeOff;
-        } else if (level < 40) {
-          icon.outerHTML = SVG_ICONS.volume2;
-        } else {
-          icon.outerHTML = SVG_ICONS.volume;
+      function createSlot(slotNumber) {
+        const playerEl = document.querySelector(`.player[data-slot="${slotNumber}"]`);
+        const sourceRow = document.querySelector(`[data-role="slot-${slotNumber}-row"]`);
+        const dropdownWrap = sourceRow.querySelector(`[data-role="device-dropdown"][data-slot="${slotNumber}"]`);
+        const connectBtn = sourceRow.querySelector(`[data-role="connect-btn"][data-slot="${slotNumber}"]`);
+
+        const slot = {
+          number: slotNumber,
+          playerEl,
+          video: playerEl.querySelector('.player__video'),
+          noSignal: playerEl.querySelector('.player__no-signal'),
+          controls: playerEl.querySelector('.player__controls'),
+          playBtn: playerEl.querySelector('[data-role="play-btn"]'),
+          muteBtn: playerEl.querySelector('[data-role="mute-btn"]'),
+          volumeSlider: playerEl.querySelector('[data-role="volume-slider"]'),
+          volumeLabel: playerEl.querySelector('[data-role="volume-label"]'),
+          fullscreenBtn: playerEl.querySelector('[data-role="fullscreen-btn"]'),
+
+          dropdownWrap,
+          dropdownTrigger: dropdownWrap.querySelector('.dropdown__trigger'),
+          dropdownLabel: dropdownWrap.querySelector('.dropdown__trigger-label'),
+          dropdownList: dropdownWrap.querySelector('.dropdown__list'),
+          connectBtn,
+
+          activeStream: null,
+          activeDeviceId: null,
+          isFullscreen: false,
+          hideTimer: null,
+        };
+
+        // ---- Volume (per slot, persisted separately in localStorage) ----
+        const storageKey = `captureVol_slot${slotNumber}`;
+
+        function updateVolumeIcon(level, muted) {
+          const icon = slot.muteBtn.querySelector('.icon');
+          if (muted || level === 0) {
+            icon.outerHTML = SVG_ICONS.volumeOff;
+          } else if (level < 40) {
+            icon.outerHTML = SVG_ICONS.volume2;
+          } else {
+            icon.outerHTML = SVG_ICONS.volume;
+          }
         }
+
+        // Applies the slider value to the actual <video> element, scaled
+        // by the current multi-source loudness compensation so two
+        // simultaneous streams don't sum to louder than one ever sounds.
+        function applyVolume(level) {
+          slot.video.volume = (level / 100) * loudnessFactor();
+          slot.volumeSlider.value = level;
+          slot.volumeLabel.textContent = level + '%';
+          updateVolumeIcon(level, slot.video.muted);
+        }
+
+        slot.applyVolume = applyVolume;
+
+        const savedVolume = Number.parseInt(localStorage.getItem(storageKey) ?? '100', 10);
+        applyVolume(savedVolume);
+
+        slot.volumeSlider.addEventListener('input', () => {
+          const level = Number.parseInt(slot.volumeSlider.value, 10);
+          slot.video.muted = false;
+          applyVolume(level);
+          localStorage.setItem(storageKey, level);
+        });
+
+        slot.muteBtn.addEventListener('click', () => {
+          slot.video.muted = !slot.video.muted;
+          const level = Number.parseInt(slot.volumeSlider.value, 10);
+          updateVolumeIcon(level, slot.video.muted);
+          slot.volumeLabel.textContent = slot.video.muted ? '0%' : level + '%';
+          applyLoudnessCompensation();
+        });
+
+        // ---- Cursor & controls auto-hide ----
+        function showControls() {
+          slot.controls.classList.add('player__controls--visible');
+          slot.playerEl.classList.remove('player--cursor-hidden');
+        }
+
+        function hideControls() {
+          if (slot.playerEl.classList.contains('player--paused')) return;
+          slot.controls.classList.remove('player__controls--visible');
+          slot.playerEl.classList.add('player--cursor-hidden');
+        }
+
+        function resetHideTimer() {
+          showControls();
+          clearTimeout(slot.hideTimer);
+          slot.hideTimer = setTimeout(hideControls, HIDE_DELAY_MS);
+        }
+
+        slot.playerEl.addEventListener('mousemove', resetHideTimer);
+        slot.controls.addEventListener('mouseenter', () => clearTimeout(slot.hideTimer));
+        slot.controls.addEventListener('mouseleave', resetHideTimer);
+        slot.playerEl.addEventListener('mouseleave', () => {
+          clearTimeout(slot.hideTimer);
+          slot.hideTimer = setTimeout(hideControls, HIDE_DELAY_MS);
+        });
+
+        // ---- Playback ----
+        slot.playBtn.addEventListener('click', () => {
+          if (!slot.video.srcObject) return;
+          slot.video.paused ? slot.video.play() : slot.video.pause();
+        });
+
+        slot.video.addEventListener('play', () => {
+          slot.playBtn.querySelector('.icon').outerHTML = SVG_ICONS.playerPause;
+          slot.playerEl.classList.remove('player--paused');
+          resetHideTimer();
+        });
+
+        slot.video.addEventListener('pause', () => {
+          slot.playBtn.querySelector('.icon').outerHTML = SVG_ICONS.playerPlay;
+          slot.playerEl.classList.add('player--paused');
+          showControls();
+          clearTimeout(slot.hideTimer);
+        });
+
+        // ---- Fullscreen ----
+        function enterFullscreen() {
+          const fn = slot.playerEl.requestFullscreen || slot.playerEl.webkitRequestFullscreen;
+          fn.call(slot.playerEl);
+          slot.isFullscreen = true;
+          slot.fullscreenBtn.querySelector('.icon').outerHTML = SVG_ICONS.fullscreenExit;
+          slot.playerEl.classList.add('player--fullscreen');
+        }
+
+        function exitFullscreen() {
+          const fn = document.exitFullscreen || document.webkitExitFullscreen;
+          fn.call(document);
+          slot.isFullscreen = false;
+          slot.fullscreenBtn.querySelector('.icon').outerHTML = SVG_ICONS.fullscreenEnter;
+          slot.playerEl.classList.remove('player--fullscreen');
+        }
+
+        function toggleFullscreen() {
+          slot.isFullscreen ? exitFullscreen() : enterFullscreen();
+        }
+
+        slot.fullscreenBtn.addEventListener('click', toggleFullscreen);
+        slot.playerEl.addEventListener('dblclick', toggleFullscreen);
+        slot.toggleFullscreen = toggleFullscreen;
+
+        document.addEventListener('fullscreenchange', () => {
+          if (!document.fullscreenElement && slot.isFullscreen) {
+            slot.isFullscreen = false;
+            slot.fullscreenBtn.querySelector('.icon').outerHTML = SVG_ICONS.fullscreenEnter;
+            slot.playerEl.classList.remove('player--fullscreen');
+          }
+        });
+
+        // ---- Device dropdown (per slot) ----
+        function openDropdown() {
+          slot.dropdownWrap.classList.add('dropdown--open');
+          slot.dropdownWrap.setAttribute('aria-expanded', 'true');
+        }
+        function closeDropdown() {
+          slot.dropdownWrap.classList.remove('dropdown--open');
+          slot.dropdownWrap.setAttribute('aria-expanded', 'false');
+        }
+        function toggleDropdown() {
+          slot.dropdownWrap.classList.contains('dropdown--open') ? closeDropdown() : openDropdown();
+        }
+
+        slot.dropdownTrigger.addEventListener('click', toggleDropdown);
+
+        slot.dropdownWrap.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            closeDropdown();
+            slot.dropdownTrigger.focus();
+          }
+        });
+
+        document.addEventListener('click', (e) => {
+          if (!slot.dropdownWrap.contains(e.target)) closeDropdown();
+        });
+
+        function selectDropdownOption(option) {
+          const value = option.dataset.value;
+          const label = option.textContent;
+
+          slot.dropdownList.querySelectorAll('.dropdown__option').forEach((opt) => {
+            opt.classList.toggle('dropdown__option--selected', opt === option);
+            opt.setAttribute('aria-selected', opt === option ? 'true' : 'false');
+          });
+
+          slot.dropdownLabel.textContent = label;
+          slot.dropdownWrap.dataset.value = value;
+          closeDropdown();
+          slot.dropdownTrigger.focus();
+
+          if (slot.activeDeviceId) {
+            setConnectBtnMode(value === slot.activeDeviceId ? 'disconnect' : 'connect');
+          }
+        }
+
+        slot.selectDropdownOption = selectDropdownOption;
+
+        // ---- Connect button ----
+        function setConnectBtnMode(mode) {
+          const icon = slot.connectBtn.querySelector('.icon');
+          const label = slot.connectBtn.querySelector('.connect-btn__label');
+          icon.outerHTML = mode === 'disconnect' ? SVG_ICONS.plugX : SVG_ICONS.plug;
+          label.textContent = mode === 'disconnect' ? 'Disconnect' : 'Connect';
+        }
+
+        slot.setConnectBtnMode = setConnectBtnMode;
+
+        async function connectDevice() {
+          const deviceId = slot.dropdownWrap.dataset.value ?? '';
+          if (!deviceId) return;
+
+          if (deviceId === slot.activeDeviceId) {
+            disconnectDevice();
+            return;
+          }
+
+          if (slot.activeStream) {
+            slot.activeStream.getTracks().forEach((track) => track.stop());
+            slot.activeStream = null;
+          }
+
+          const deviceInfo = deviceGroupMap[deviceId];
+          const audioConstraints = deviceInfo?.audioDevice
+            ? {
+                deviceId: { exact: deviceInfo.audioDevice.deviceId },
+                sampleRate: 48000,
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+              }
+            : {
+                groupId: deviceInfo?.groupId,
+                sampleRate: 48000,
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+              };
+
+          try {
+            slot.activeStream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                deviceId: { exact: deviceId },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+                frameRate: { ideal: 60 },
+              },
+              audio: audioConstraints,
+            });
+
+            slot.video.srcObject = slot.activeStream;
+            applyVolume(Number.parseInt(slot.volumeSlider.value, 10));
+            await slot.video.play();
+
+            slot.activeDeviceId = deviceId;
+            slot.noSignal.style.display = 'none';
+            setConnectBtnMode('disconnect');
+            applyLoudnessCompensation();
+          } catch (error) {
+            alert(`Could not connect (slot ${slot.number}): ` + error.message);
+            console.error(error);
+          }
+        }
+
+        function disconnectDevice() {
+          if (slot.activeStream) {
+            slot.activeStream.getTracks().forEach((track) => track.stop());
+            slot.activeStream = null;
+          }
+
+          slot.video.srcObject = null;
+          slot.activeDeviceId = null;
+          slot.noSignal.style.display = 'flex';
+          slot.playerEl.classList.add('player--paused');
+          showControls();
+          clearTimeout(slot.hideTimer);
+          setConnectBtnMode('connect');
+          applyLoudnessCompensation();
+        }
+
+        slot.connectDevice = connectDevice;
+        slot.disconnectDevice = disconnectDevice;
+        slot.connectBtn.addEventListener('click', connectDevice);
+
+        slotRegistry.push(slot);
+        return slot;
       }
 
-      function applyVolume(level) {
-        video.volume = level / 100;
-        volumeSlider.value = level;
-        volumeLabel.textContent = level + '%';
-        updateVolumeIcon(level, video.muted);
-      }
-
-      const savedVolume = Number.parseInt(localStorage.getItem('captureVol') ?? '100', 10);
-      applyVolume(savedVolume);
-
-      volumeSlider.addEventListener('input', () => {
-        const level = Number.parseInt(volumeSlider.value, 10);
-        video.volume = level / 100;
-        video.muted = false;
-        volumeLabel.textContent = level + '%';
-        updateVolumeIcon(level, false);
-        localStorage.setItem('captureVol', level);
-      });
-
-      muteBtn.addEventListener('click', () => {
-        video.muted = !video.muted;
-        const level = Number.parseInt(volumeSlider.value, 10);
-        updateVolumeIcon(level, video.muted);
-        volumeLabel.textContent = video.muted ? '0%' : level + '%';
-      });
+      const slot1 = createSlot(1);
+      const slot2 = createSlot(2);
+      const slots = slotRegistry;
 
       // -------------------------------------------------------
-      // Device enumeration
+      // Device enumeration — rebuilds BOTH slots' dropdowns from the
+      // same device list, since they share the same allowed sources.
       // -------------------------------------------------------
       async function enumerateDevices() {
         // Request permission first so device labels are populated.
-        // A denial (NotAllowedError) is expected if the user blocks access —
-        // enumeration still runs, but device labels will be empty.
+        // A denial (NotAllowedError) is expected if the user blocks
+        // access — enumeration still runs, but labels will be empty.
         try {
           const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
           tempStream.getTracks().forEach((track) => track.stop());
@@ -671,13 +1138,11 @@
         const videoInputs = allDevices.filter((d) => d.kind === 'videoinput');
         const audioInputs = allDevices.filter((d) => d.kind === 'audioinput');
 
-        // Build a groupId → audio device lookup for automatic audio pairing
         const audioByGroup = {};
         audioInputs.forEach((audio) => {
           if (audio.groupId) audioByGroup[audio.groupId] = audio;
         });
 
-        // Prefer the named USB audio device for the USB Video capture card
         const usbAudioDevice = audioInputs.find((a) => /digital audio interface.*usb digital audio/i.test(a.label));
 
         deviceGroupMap = {};
@@ -689,9 +1154,12 @@
           };
         });
 
-        // Rebuild the custom dropdown list, keeping the current selection
-        const previousValue = dropdown.dataset.value ?? '';
-        dropdownList.innerHTML = '';
+        slots.forEach((slot) => rebuildSlotDropdown(slot, videoInputs));
+      }
+
+      function rebuildSlotDropdown(slot, videoInputs) {
+        const previousValue = slot.dropdownWrap.dataset.value ?? '';
+        slot.dropdownList.innerHTML = '';
         let foundAny = false;
 
         ALLOWED_SOURCES.forEach(({ match, name }) => {
@@ -700,246 +1168,201 @@
 
           foundAny = true;
 
-          // <li> is just a non-interactive layout wrapper.
-          // The <button> inside it is the actual interactive option.
           const listItem = document.createElement('li');
-          const option = document.createElement('button');
+          listItem.className = 'dropdown__item';
 
+          const option = document.createElement('button');
           option.type = 'button';
-          option.className = 'dropdown-option';
+          option.className = 'dropdown__option';
           option.dataset.value = found.deviceId;
           option.textContent = name;
 
           if (found.deviceId === previousValue) {
+            option.classList.add('dropdown__option--selected');
             option.setAttribute('aria-selected', 'true');
-            dropdownLabel.textContent = name;
-            dropdown.dataset.value = found.deviceId;
+            slot.dropdownLabel.textContent = name;
+            slot.dropdownWrap.dataset.value = found.deviceId;
           } else {
             option.setAttribute('aria-selected', 'false');
           }
 
-          option.addEventListener('click', () => selectDropdownOption(option));
+          option.addEventListener('click', () => slot.selectDropdownOption(option));
           listItem.appendChild(option);
-          dropdownList.appendChild(listItem);
+          slot.dropdownList.appendChild(listItem);
         });
 
         if (!foundAny) {
           const listItem = document.createElement('li');
+          listItem.className = 'dropdown__item';
+
           const empty = document.createElement('button');
           empty.type = 'button';
-          empty.className = 'dropdown-option dropdown-option--empty';
+          empty.className = 'dropdown__option dropdown__option--empty';
           empty.disabled = true;
           empty.textContent = 'No capture devices found';
+
           listItem.appendChild(empty);
-          dropdownList.appendChild(listItem);
+          slot.dropdownList.appendChild(listItem);
         }
       }
 
       // -------------------------------------------------------
-      // Custom dropdown interaction
+      // Layout selector — controls how many players are visible and
+      // what proportion of the stage each one occupies.
       // -------------------------------------------------------
-      function selectDropdownOption(option) {
-        const value = option.dataset.value;
-        const label = option.textContent;
+      const stage = document.querySelector('[data-role="stage"]');
+      const slot2Row = document.querySelector('[data-role="slot-2-row"]');
+      const layoutDropdownWrap = document.querySelector('[data-role="layout-dropdown"]');
+      const layoutTrigger = document.querySelector('[data-role="layout-trigger"]');
+      const layoutTriggerLabel = document.querySelector('[data-role="layout-trigger-label"]');
+      const layoutList = document.querySelector('[data-role="layout-list"]');
 
-        // Update selection state on all options
-        dropdownList.querySelectorAll('.dropdown-option').forEach((opt) => {
-          opt.setAttribute('aria-selected', opt === option ? 'true' : 'false');
-        });
+      function applyLayout(layoutId) {
+        const layout = LAYOUTS.find((l) => l.id === layoutId) ?? LAYOUTS[0];
 
-        // Update the trigger label and stored value
-        dropdownLabel.textContent = label;
-        dropdown.dataset.value = value;
+        stage.dataset.layout = layout.id;
+        layoutTriggerLabel.textContent = layout.label;
 
-        closeDropdown();
-        dropdownTrigger.focus();
+        // Show/hide the slot-2 source picker row to match
+        slot2Row.classList.toggle('toolbar__source-row--hidden', layout.slots !== 2);
 
-        // Update connect button if we just switched source while connected
-        if (activeDeviceId) {
-          setConnectBtnMode(value === activeDeviceId ? 'disconnect' : 'connect');
+        // Show/hide the slot-2 player itself
+        slot2.playerEl.classList.toggle('player--hidden', layout.slots !== 2);
+
+        // Mark narrow players (30% share) so their controls compact down
+        const isSplit = layout.id === '70-30' || layout.id === '30-70';
+        slot1.playerEl.classList.toggle('player--narrow', layout.id === '30-70');
+        slot2.playerEl.classList.toggle('player--narrow', layout.id === '70-30');
+        if (!isSplit) {
+          slot1.playerEl.classList.remove('player--narrow');
+          slot2.playerEl.classList.remove('player--narrow');
         }
-      }
 
-      function openDropdown() {
-        dropdown.setAttribute('aria-expanded', 'true');
-      }
-
-      function closeDropdown() {
-        dropdown.setAttribute('aria-expanded', 'false');
-      }
-
-      function toggleDropdown() {
-        const isOpen = dropdown.getAttribute('aria-expanded') === 'true';
-        isOpen ? closeDropdown() : openDropdown();
-      }
-
-      dropdownTrigger.addEventListener('click', toggleDropdown);
-
-      // Close on Escape, regardless of which element has focus
-      dropdown.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-          closeDropdown();
-          dropdownTrigger.focus();
+        // If we just switched away from split view, disconnect slot 2
+        // so it doesn't keep capturing a device the user can no longer see.
+        if (layout.slots === 1 && slot2.activeDeviceId) {
+          slot2.disconnectDevice();
         }
-      });
 
-      // Close when clicking outside
-      document.addEventListener('click', (e) => {
-        if (!dropdown.contains(e.target)) closeDropdown();
-      });
-
-      // -------------------------------------------------------
-      // Connect / disconnect
-      // -------------------------------------------------------
-      function setConnectBtnMode(mode) {
-        connectBtn.innerHTML = mode === 'disconnect' ? SVG_ICONS.plugX + ' Disconnect' : SVG_ICONS.plug + ' Connect';
+        fitStageHeight(layout);
       }
 
-      async function connectDevice() {
-        const deviceId = dropdown.dataset.value ?? '';
-        if (!deviceId) return;
+      // -------------------------------------------------------
+      // fitStageHeight — sizes each visible player so that, together,
+      // they fill as much of the available width as possible while
+      // every player keeps its own undistorted 16:9 ratio.
+      // -------------------------------------------------------
+      const STAGE_GAP_PX = 8; // matches the .stage `gap` in CSS
+      const VERTICAL_CHROME = 140; // toolbar height + paddings/gaps around it
 
-        // Clicking Connect on the already-connected device disconnects it
-        if (deviceId === activeDeviceId) {
-          disconnectDevice();
+      function fitStageHeight(layout) {
+        const availableHeight = window.innerHeight - VERTICAL_CHROME;
+        const availableWidth = stage.parentElement.clientWidth;
+
+        if (layout.slots === 1) {
+          const heightFromWidth = availableWidth / (16 / 9);
+          const finalHeight = Math.min(availableHeight, heightFromWidth);
+          slot1.playerEl.style.height = finalHeight + 'px';
           return;
         }
 
-        // Stop any existing stream before switching
-        if (activeStream) {
-          activeStream.getTracks().forEach((track) => track.stop());
-          activeStream = null;
-        }
+        const [ratio1, ratio2] = layout.heightRatio;
+        const combinedRatio = ratio1 + ratio2;
+        const heightFromWidth = (availableWidth - STAGE_GAP_PX) / (combinedRatio * (16 / 9));
 
-        const deviceInfo = deviceGroupMap[deviceId];
-        const audioConstraints = deviceInfo?.audioDevice
-          ? {
-              deviceId: { exact: deviceInfo.audioDevice.deviceId },
-              sampleRate: 48000,
-              echoCancellation: false,
-              noiseSuppression: false,
-              autoGainControl: false,
-            }
-          : {
-              groupId: deviceInfo?.groupId,
-              sampleRate: 48000,
-              echoCancellation: false,
-              noiseSuppression: false,
-              autoGainControl: false,
-            };
+        const maxRatio = Math.max(ratio1, ratio2);
+        const heightFromHeight = availableHeight / maxRatio;
 
-        try {
-          activeStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              deviceId: { exact: deviceId },
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
-            },
-            audio: audioConstraints,
+        const unitHeight = Math.min(heightFromWidth, heightFromHeight);
+
+        slot1.playerEl.style.height = unitHeight * ratio1 + 'px';
+        slot2.playerEl.style.height = unitHeight * ratio2 + 'px';
+      }
+
+      window.addEventListener('resize', () => {
+        const current = LAYOUTS.find((l) => l.id === stage.dataset.layout) ?? LAYOUTS[0];
+        fitStageHeight(current);
+      });
+
+      function buildLayoutList() {
+        layoutList.innerHTML = '';
+        LAYOUTS.forEach((layout) => {
+          const listItem = document.createElement('li');
+          listItem.className = 'dropdown__item';
+
+          const option = document.createElement('button');
+          option.type = 'button';
+          option.className = 'dropdown__option';
+          option.dataset.id = layout.id;
+          option.textContent = layout.label;
+
+          const isSelected = layout.id === stage.dataset.layout;
+          option.classList.toggle('dropdown__option--selected', isSelected);
+          option.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+
+          option.addEventListener('click', () => {
+            layoutList.querySelectorAll('.dropdown__option').forEach((opt) => {
+              opt.classList.toggle('dropdown__option--selected', opt === option);
+              opt.setAttribute('aria-selected', opt === option ? 'true' : 'false');
+            });
+            applyLayout(layout.id);
+            closeLayoutDropdown();
+            layoutTrigger.focus();
           });
 
-          video.srcObject = activeStream;
-          video.volume = Number.parseInt(volumeSlider.value, 10) / 100;
-          await video.play();
-
-          activeDeviceId = deviceId;
-          noSignal.style.display = 'none';
-          setConnectBtnMode('disconnect');
-        } catch (error) {
-          alert('Could not connect: ' + error.message);
-          console.error(error);
-        }
+          listItem.appendChild(option);
+          layoutList.appendChild(listItem);
+        });
       }
 
-      function disconnectDevice() {
-        if (activeStream) {
-          activeStream.getTracks().forEach((track) => track.stop());
-          activeStream = null;
-        }
-
-        video.srcObject = null;
-        activeDeviceId = null;
-        noSignal.style.display = 'flex';
-        playerWrap.classList.add('paused');
-        showControls();
-        clearTimeout(hideTimer);
-        setConnectBtnMode('connect');
+      function openLayoutDropdown() {
+        layoutDropdownWrap.classList.add('dropdown--open');
+        layoutDropdownWrap.setAttribute('aria-expanded', 'true');
+      }
+      function closeLayoutDropdown() {
+        layoutDropdownWrap.classList.remove('dropdown--open');
+        layoutDropdownWrap.setAttribute('aria-expanded', 'false');
+      }
+      function toggleLayoutDropdown() {
+        layoutDropdownWrap.classList.contains('dropdown--open') ? closeLayoutDropdown() : openLayoutDropdown();
       }
 
-      connectBtn.addEventListener('click', connectDevice);
+      layoutTrigger.addEventListener('click', toggleLayoutDropdown);
 
-      // -------------------------------------------------------
-      // Playback
-      // -------------------------------------------------------
-      playBtn.addEventListener('click', () => {
-        if (!video.srcObject) return;
-        video.paused ? video.play() : video.pause();
-      });
-
-      video.addEventListener('play', () => {
-        playBtn.querySelector('.icon').outerHTML = SVG_ICONS.playerPause;
-        playerWrap.classList.remove('paused');
-        // Start the hide timer immediately on play — don't wait for mouse movement
-        resetHideTimer();
-      });
-
-      video.addEventListener('pause', () => {
-        playBtn.querySelector('.icon').outerHTML = SVG_ICONS.playerPlay;
-        playerWrap.classList.add('paused');
-        // Always show controls when paused
-        showControls();
-        clearTimeout(hideTimer);
-      });
-
-      // -------------------------------------------------------
-      // Fullscreen
-      // -------------------------------------------------------
-      function enterFullscreen() {
-        const fn = playerWrap.requestFullscreen || playerWrap.webkitRequestFullscreen;
-        fn.call(playerWrap);
-        isFullscreen = true;
-        fullscreenBtn.querySelector('.icon').outerHTML = SVG_ICONS.fullscreenExit;
-        // playerWrap.classList.add('fullscreen');
-      }
-
-      function exitFullscreen() {
-        const fn = document.exitFullscreen || document.webkitExitFullscreen;
-        fn.call(document);
-        isFullscreen = false;
-        fullscreenBtn.querySelector('.icon').outerHTML = SVG_ICONS.fullscreenEnter;
-      }
-
-      function toggleFullscreen() {
-        isFullscreen ? exitFullscreen() : enterFullscreen();
-      }
-
-      fullscreenBtn.addEventListener('click', toggleFullscreen);
-
-      // Double-click the video to toggle fullscreen
-      playerWrap.addEventListener('dblclick', toggleFullscreen);
-
-      // Sync state if the user exits fullscreen via Esc
-      document.addEventListener('fullscreenchange', () => {
-        if (!document.fullscreenElement) {
-          isFullscreen = false;
-          fullscreenBtn.querySelector('.icon').outerHTML = SVG_ICONS.fullscreenEnter;
-          playerWrap.classList.remove('fullscreen');
+      layoutDropdownWrap.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeLayoutDropdown();
+          layoutTrigger.focus();
         }
       });
 
+      document.addEventListener('click', (e) => {
+        if (!layoutDropdownWrap.contains(e.target)) closeLayoutDropdown();
+      });
+
+      buildLayoutList();
+      applyLayout('single');
+
       // -------------------------------------------------------
-      // Keyboard shortcuts
+      // Keyboard shortcuts — apply to whichever slot is fullscreen,
+      // or slot 1 by default if neither is.
       // -------------------------------------------------------
+      function activeSlotForShortcuts() {
+        return slots.find((s) => s.isFullscreen) ?? slot1;
+      }
+
       document.addEventListener('keydown', (e) => {
+        const slot = activeSlotForShortcuts();
+
         if (e.key === 'f' || e.key === 'F') {
-          toggleFullscreen();
+          slot.toggleFullscreen();
         }
-        if ((e.key === ' ' || e.key === 'k') && video.srcObject) {
+        if ((e.key === ' ' || e.key === 'k') && slot.video.srcObject) {
           e.preventDefault();
-          playBtn.click();
+          slot.playBtn.click();
         }
         if (e.key === 'm' || e.key === 'M') {
-          muteBtn.click();
+          slot.muteBtn.click();
         }
       });
 
