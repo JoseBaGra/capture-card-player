@@ -1,4 +1,7 @@
-# Capture Card Player
+<h1 align="center">
+  <img src="favicon.svg" width="100" alt="App Icon"> 
+  <div align="center">Capture Card Play</div>
+</h1>
 
 A simple web application that lets you view and listen to a connected capture card directly in your browser.
 
