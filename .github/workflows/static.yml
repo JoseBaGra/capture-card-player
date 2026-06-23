@@ -22,6 +22,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Upload production-ready build files
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-files
+          path: ./dist
+
   # Single deploy job since we're just deploying
   deploy:
     environment:
@@ -29,24 +55,14 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
+      - name: Download artifact
+        uses: actions/download-artifact@v8
         with:
-          version: 9 # Specifies the pnpm version to use
+          name: production-files
+          path: ./dist
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          node-version: 20
-          cache: 'pnpm'
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Build Production Bundle
-        run: pnpm build
-      - name: Deploy dist Folder to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          folder: dist # Specifies the Vite build output directory to deploy
-          branch: gh-pages # The target branch GitHub Pages serves assets from
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
