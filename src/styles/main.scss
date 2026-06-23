@@ -1,0 +1,485 @@
+// =============================================================
+// Capture Card Player — Styles
+// Catppuccin Macchiato palette variables: https://catppuccin.com/palette
+// =============================================================
+
+// -------------------------------------------------------------
+// CSS Custom Properties (Theming, Sizing & Transitions)
+// -------------------------------------------------------------
+:root {
+  // Catppuccin Macchiato Color Map
+  --ctp-base: #24273a;
+  --ctp-mantle: #1e2030;
+  --ctp-crust: #181926;
+  --ctp-surface0: #363a4f;
+  --ctp-surface1: #494d64;
+  --ctp-surface2: #5b6078;
+  --ctp-overlay0: #6e738d;
+  --ctp-overlay2: #939ab7;
+  --ctp-text: #cad3f5;
+  --ctp-teal: #8bd5ca; // Accent Color
+
+  // Translucent Overlay Layout Engines (Native Fallback Mapping)
+  --overlay-controls-top: rgb(24 25 38 / 0%);
+  --overlay-controls-mid: rgb(24 25 38 / 55%);
+  --overlay-controls-end: rgb(24 25 38 / 92%);
+  --overlay-btn-rest: rgb(24 25 38 / 55%);
+  --overlay-btn-hover: rgb(73 77 100 / 85%);
+  --overlay-shadow: rgb(0 0 0 / 60%);
+
+  // Sizing Layout Primitives
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --gap-sm: 6px;
+  --gap-md: 10px;
+
+  // Animation Timing Handles
+  --ease-fast: 0.1s;
+  --ease-base: 0.15s;
+  --ease-slow: 0.25s;
+
+  // Z-Index Layer Stack Matrices
+  --z-stage: 1;
+  --z-toolbar: 10;
+  --z-dropdown-list: 20;
+}
+
+// -------------------------------------------------------------
+// Mixins
+// -------------------------------------------------------------
+
+/// Standard flex row primitive with dynamic cross-axis alignment
+@mixin flex-row($gap: var(--gap-md)) {
+  display: flex;
+  align-items: center;
+  gap: $gap;
+}
+
+/// Normalizes HTML button interaction surfaces across modern agents
+@mixin button-reset {
+  font-family: inherit;
+  outline: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/// Sizing and structural rule mapping for audio level thumb elements
+@mixin slider-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background-color: var(--ctp-teal);
+  cursor: pointer;
+}
+
+// -------------------------------------------------------------
+// Core Application Document Resets
+// -------------------------------------------------------------
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background-color: var(--ctp-base);
+  color: var(--ctp-text);
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  padding: 16px;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.icon {
+  display: block;
+  flex-shrink: 0;
+}
+
+// =============================================================
+// BLOCK: toolbar
+// =============================================================
+.toolbar {
+  position: relative;
+  z-index: var(--z-toolbar);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+  width: 100%;
+
+  &__row {
+    @include flex-row;
+    width: 100%;
+  }
+
+  &__spacer {
+    flex: 1;
+  }
+
+  &__sources {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    width: 100%;
+  }
+
+  &__source-row {
+    @include flex-row;
+    width: 100%;
+
+    &--hidden {
+      display: none;
+    }
+  }
+}
+
+// =============================================================
+// BLOCK: dropdown
+// =============================================================
+.dropdown {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+
+  &--layout {
+    flex: 0 0 auto;
+    width: 220px;
+  }
+
+  &__trigger {
+    @include button-reset;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background-color: var(--ctp-surface0);
+    border: 1px solid var(--ctp-surface1);
+    color: var(--ctp-text);
+    padding: 7px 10px;
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    user-select: none;
+    overflow: hidden;
+    white-space: nowrap;
+    transition: border-color var(--ease-base);
+
+    &:hover {
+      border-color: var(--ctp-surface2);
+    }
+  }
+
+  &--open &__trigger {
+    border-color: var(--ctp-surface2);
+  }
+
+  &__trigger-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__chevron {
+    opacity: 0.6;
+    transition: transform var(--ease-base);
+    flex-shrink: 0;
+  }
+
+  &--open &__chevron {
+    transform: rotate(180deg);
+  }
+
+  &__list {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background-color: var(--ctp-surface0);
+    border: 1px solid var(--ctp-surface1);
+    border-radius: var(--radius-md);
+    padding: 4px;
+    list-style: none;
+    z-index: var(--z-dropdown-list);
+    overflow: hidden;
+  }
+
+  &--layout &__list {
+    min-width: 100%;
+    width: max-content;
+  }
+
+  &--open &__list {
+    display: block;
+  }
+
+  &__item {
+    display: block;
+  }
+
+  &__option {
+    @include button-reset;
+    width: 100%;
+    text-align: left;
+    display: block;
+    padding: 7px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    white-space: nowrap;
+    color: var(--ctp-text);
+    transition: background-color var(--ease-fast);
+
+    &:hover,
+    &:focus-visible,
+    &--selected {
+      background-color: var(--ctp-surface1);
+    }
+
+    &--selected {
+      color: var(--ctp-teal);
+    }
+
+    &--empty {
+      color: var(--ctp-overlay0);
+      cursor: default;
+
+      &:hover {
+        background-color: transparent;
+      }
+    }
+  }
+}
+
+// =============================================================
+// BLOCK: connect-btn
+// =============================================================
+.connect-btn {
+  @include flex-row(var(--gap-sm));
+  justify-content: center;
+  background-color: var(--ctp-surface0);
+  border: 1px solid var(--ctp-surface1);
+  color: var(--ctp-text);
+  padding: 7px 16px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 130px;
+  transition:
+    background-color var(--ease-base),
+    border-color var(--ease-base);
+
+  &:hover {
+    background-color: var(--ctp-surface1);
+    border-color: var(--ctp-surface2);
+  }
+}
+
+// =============================================================
+// BLOCK: stage
+// =============================================================
+.stage-wrap {
+  position: relative;
+  z-index: var(--z-stage);
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.stage {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+// =============================================================
+// BLOCK: player
+// =============================================================
+.player {
+  position: relative;
+  aspect-ratio: 16 / 9; // Modern CSS aspect-ratio evaluation
+  background-color: var(--ctp-crust);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  cursor: default;
+
+  &--hidden {
+    display: none;
+  }
+
+  &--cursor-hidden {
+    cursor: none;
+  }
+
+  &--narrow {
+    .player__volume-slider {
+      width: 48px;
+    }
+
+    .player__controls {
+      padding: 8px 10px 10px;
+      gap: var(--gap-sm);
+    }
+  }
+
+  &__video {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+    background-color: #000;
+  }
+
+  // ---- No-signal placeholder ----
+  &__no-signal {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--gap-md);
+    color: var(--ctp-overlay0);
+    font-size: 13px;
+    text-align: center;
+    padding: 0 16px;
+    pointer-events: none;
+  }
+
+  &__no-signal-dots {
+    display: grid;
+    grid-template-columns: repeat(5, 8px);
+    gap: 5px;
+    margin-bottom: var(--gap-sm);
+  }
+
+  &__no-signal-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--ctp-surface0);
+    animation: blink 1.4s infinite both;
+
+    &:nth-child(odd) {
+      animation-delay: 0.2s;
+    }
+
+    &:nth-child(3) {
+      animation-delay: 0.5s;
+    }
+  }
+
+  // ---- Playback controls bar ----
+  &__controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 12px 16px 14px;
+    background: linear-gradient(to bottom, var(--overlay-controls-top), var(--overlay-controls-mid) 40%, var(--overlay-controls-end) 100%);
+    @include flex-row;
+    opacity: 0;
+    transition: opacity var(--ease-slow);
+
+    &--visible {
+      opacity: 1;
+    }
+  }
+
+  &__control-btn {
+    background-color: var(--overlay-btn-rest);
+    border: none;
+    color: var(--ctp-text);
+    cursor: pointer;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    filter: drop-shadow(0 1px 2px var(--overlay-shadow));
+    transition: background-color var(--ease-base);
+    flex-shrink: 0;
+
+    &:hover {
+      background-color: var(--overlay-btn-hover);
+    }
+  }
+
+  &__volume-group {
+    @include flex-row(var(--gap-sm));
+    min-width: 0;
+  }
+
+  &__volume-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 80px;
+    height: 3px;
+    background-color: var(--ctp-surface2);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+
+    &::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      @include slider-thumb;
+    }
+
+    &::-moz-range-thumb {
+      border: none;
+      @include slider-thumb;
+    }
+  }
+
+  &__volume-label {
+    color: var(--ctp-overlay2);
+    font-size: 11px;
+    min-width: 30px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+
+  &__spacer {
+    flex: 1;
+  }
+}
+
+// -------------------------------------------------------------
+// Keyframes
+// -------------------------------------------------------------
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
