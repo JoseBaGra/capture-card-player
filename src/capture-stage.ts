@@ -72,15 +72,15 @@ export function captureStage(): { destroy: () => void } {
   // ============================================================================
 
   const SVG_ICONS: SvgIcons = {
-    playerPlay: `<use href="/icons.svg#icon-player-play" />`,
-    playerPause: `<use href="/icons.svg#icon-player-pause" />`,
-    volume: `<use href="/icons.svg#icon-volume" />`,
-    volume2: `<use href="/icons.svg#icon-volume2" />`,
-    volumeOff: `<use href="/icons.svg#icon-volume-off" />`,
-    fullscreenEnter: `<use href="/icons.svg#icon-fullscreen-enter" />`,
-    fullscreenExit: `<use href="/icons.svg#icon-fullscreen-exit" />`,
-    plug: `<use href="/icons.svg#icon-plug" />`,
-    plugX: `<use href="/icons.svg#icon-plug-x" />`,
+    playerPlay: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-player-play" />`,
+    playerPause: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-player-pause" />`,
+    volume: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-volume" />`,
+    volume2: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-volume2" />`,
+    volumeOff: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-volume-off" />`,
+    fullscreenEnter: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-fullscreen-enter" />`,
+    fullscreenExit: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-fullscreen-exit" />`,
+    plug: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-plug" />`,
+    plugX: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-plug-x" />`,
   };
 
   const ALLOWED_SOURCES: readonly AllowedSource[] = [

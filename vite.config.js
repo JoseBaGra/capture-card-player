@@ -1,3 +1,5 @@
+import { defineConfig } from 'vite';
+
 export default {
-  base: '/capture-card-player/',
+  base: process.env.NODE_ENV === 'production' ? '/capture-card-player/' : '/',
 };
