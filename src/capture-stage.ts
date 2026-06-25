@@ -1,6 +1,3 @@
-/**
- * Contextual handle containing configuration and active pipelines for the Stage application context.
- */
 export function captureStage(): { destroy: () => void } {
   // ============================================================================
   // Types & Interfaces
@@ -11,6 +8,7 @@ export function captureStage(): { destroy: () => void } {
     readonly playerPause: string;
     readonly volume: string;
     readonly volume2: string;
+    readonly volume3: string;
     readonly volumeOff: string;
     readonly fullscreenEnter: string;
     readonly fullscreenExit: string;
@@ -44,7 +42,6 @@ export function captureStage(): { destroy: () => void } {
     readonly playBtn: HTMLButtonElement;
     readonly muteBtn: HTMLButtonElement;
     readonly volumeSlider: HTMLInputElement;
-    readonly volumeLabel: HTMLElement;
     readonly fullscreenBtn: HTMLButtonElement;
     readonly dropdownWrap: HTMLElement;
     readonly dropdownTrigger: HTMLButtonElement;
@@ -76,6 +73,7 @@ export function captureStage(): { destroy: () => void } {
     playerPause: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-player-pause" />`,
     volume: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-volume" />`,
     volume2: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-volume2" />`,
+    volume3: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-volume3" />`,
     volumeOff: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-volume-off" />`,
     fullscreenEnter: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-fullscreen-enter" />`,
     fullscreenExit: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-fullscreen-exit" />`,
@@ -173,7 +171,6 @@ export function captureStage(): { destroy: () => void } {
       playBtn,
       muteBtn,
       volumeSlider: queryElement<HTMLInputElement>('[data-role="volume-slider"]', playerEl),
-      volumeLabel: queryElement('[data-role="volume-label"]', playerEl),
       fullscreenBtn,
 
       dropdownWrap,
@@ -205,8 +202,10 @@ export function captureStage(): { destroy: () => void } {
 
     function updateVolumeIcon(level: number, muted: boolean): void {
       if (!slot.muteIconWrap) return;
-      if (muted || level === 0) {
+      if (muted) {
         slot.muteIconWrap.innerHTML = SVG_ICONS.volumeOff;
+      } else if (level === 0) {
+        slot.muteIconWrap.innerHTML = SVG_ICONS.volume3;
       } else if (level < 40) {
         slot.muteIconWrap.innerHTML = SVG_ICONS.volume2;
       } else {
@@ -217,7 +216,6 @@ export function captureStage(): { destroy: () => void } {
     function applyVolume(level: number): void {
       slot.video.volume = (level / 100) * loudnessFactor();
       slot.volumeSlider.value = level.toString();
-      slot.volumeLabel.textContent = `${level}%`;
       updateVolumeIcon(level, slot.video.muted);
     }
     slot.applyVolume = applyVolume;
@@ -235,8 +233,11 @@ export function captureStage(): { destroy: () => void } {
     slot.muteBtn.addEventListener('click', () => {
       slot.video.muted = !slot.video.muted;
       const level = Number.parseInt(slot.volumeSlider.value, 10) || 0;
-      updateVolumeIcon(level, slot.video.muted);
-      slot.volumeLabel.textContent = slot.video.muted ? '0%' : `${level}%`;
+      if (!slot.video.muted && level === 0) {
+        applyVolume(20);
+      } else {
+        updateVolumeIcon(level, slot.video.muted);
+      }
       applyLoudnessCompensation();
     });
 
@@ -316,7 +317,13 @@ export function captureStage(): { destroy: () => void } {
     slot.toggleFullscreen = toggleFullscreen;
 
     slot.fullscreenBtn.addEventListener('click', toggleFullscreen);
-    slot.playerEl.addEventListener('dblclick', toggleFullscreen);
+    slot.playerEl.addEventListener('dblclick', function (event: MouseEvent) {
+      const allowedNodes = ['VIDEO', 'DIV'];
+      if (!allowedNodes.includes((event?.target as Node).nodeName)) {
+        return;
+      }
+      toggleFullscreen();
+    });
 
     function openDropdown(): void {
       slot.dropdownWrap.classList.add('dropdown--open');
@@ -555,6 +562,7 @@ export function captureStage(): { destroy: () => void } {
   const layoutTrigger = queryElement<HTMLButtonElement>('[data-role="layout-trigger"]');
   const layoutTriggerLabel = queryElement('[data-role="layout-trigger-label"]');
   const layoutList = queryElement<HTMLUListElement>('[data-role="layout-list"]');
+  const swapButton = queryElement('[data-role="swap-sources"]');
 
   const STAGE_GAP_PX = 8;
   const VERTICAL_CHROME = 140;
@@ -654,6 +662,13 @@ export function captureStage(): { destroy: () => void } {
           opt.classList.toggle('dropdown__option--selected', matching);
           opt.setAttribute('aria-selected', matching ? 'true' : 'false');
         });
+
+        if (layout.id === 'single') {
+          swapButton.classList.add('hidden');
+        } else {
+          swapButton.classList.remove('hidden');
+        }
+
         applyLayout(layout.id);
         closeLayoutDropdown();
         layoutTrigger.focus();
@@ -665,6 +680,50 @@ export function captureStage(): { destroy: () => void } {
   }
 
   layoutTrigger.addEventListener('click', toggleLayoutDropdown);
+
+  function swapSlotDevices(): void {
+    const stream1 = slot1.activeStream;
+    const stream2 = slot2.activeStream;
+    const deviceId1 = slot1.activeDeviceId;
+    const deviceId2 = slot2.activeDeviceId;
+
+    slot1.activeStream = stream2;
+    slot2.activeStream = stream1;
+    slot1.activeDeviceId = deviceId2;
+    slot2.activeDeviceId = deviceId1;
+
+    // Swap the rendered video by reassigning srcObject from the swapped streams
+    slot1.video.srcObject = slot1.activeStream;
+    slot2.video.srcObject = slot2.activeStream;
+
+    [slot1, slot2].forEach((slot) => {
+      if (slot.activeStream) {
+        slot.noSignal.style.display = 'none';
+        slot.setConnectBtnMode('disconnect');
+        slot.video.play().catch(console.error);
+      } else {
+        slot.noSignal.style.display = 'flex';
+        slot.setConnectBtnMode('connect');
+      }
+
+      // Re-apply this slot's own volume to whatever stream it now holds
+      slot.applyVolume(Number.parseInt(slot.volumeSlider.value, 10) || 0);
+
+      // Sync the device dropdown selection to reflect the swapped assignment
+      const value = slot.activeDeviceId ?? '';
+      slot.dropdownWrap.dataset.value = value;
+      slot.dropdownList.querySelectorAll<HTMLButtonElement>('.dropdown__option').forEach((opt) => {
+        const matching = value !== '' && opt.dataset.value === value;
+        opt.classList.toggle('dropdown__option--selected', matching);
+        opt.setAttribute('aria-selected', matching ? 'true' : 'false');
+        if (matching) slot.dropdownLabel.textContent = opt.textContent ?? '';
+      });
+    });
+
+    applyLoudnessCompensation();
+  }
+
+  swapButton.addEventListener('click', swapSlotDevices, { signal });
 
   layoutDropdownWrap.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Escape') {

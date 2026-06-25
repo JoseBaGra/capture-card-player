@@ -115,6 +115,18 @@ body {
 }
 
 // =============================================================
+// Hidden Class
+// =============================================================
+.hidden {
+  display: none;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  transition: opacity var(--ease-base);
+}
+
+// =============================================================
 // BLOCK: toolbar
 // =============================================================
 .toolbar {
@@ -130,14 +142,13 @@ body {
     width: 100%;
   }
 
-  &__spacer {
-    flex: 1;
-  }
-
-  &__sources {
+  &__column {
     display: flex;
     flex-direction: column;
     gap: var(--gap-md);
+  }
+
+  &__sources {
     width: 100%;
   }
 
@@ -247,7 +258,10 @@ body {
     color: var(--ctp-text);
     transition: background-color var(--ease-fast);
 
-    &:hover,
+    &:hover {
+      background-color: var(--ctp-surface2);
+    }
+
     &:focus-visible,
     &--selected {
       background-color: var(--ctp-surface1);
@@ -265,6 +279,28 @@ body {
         background-color: transparent;
       }
     }
+  }
+}
+
+// =============================================================
+// BLOCK: swap-button
+// =============================================================
+.swap-button {
+  @include flex-row(var(--gap-sm));
+  justify-content: space-between;
+  background-color: var(--ctp-surface0);
+  border: 1px solid var(--ctp-surface1);
+  color: var(--ctp-text);
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  width: 100%;
+
+  &__spacer {
+    width: 14px;
   }
 }
 
@@ -441,7 +477,7 @@ body {
     appearance: none;
     width: 80px;
     height: 3px;
-    background-color: var(--ctp-surface2);
+    background-color: var(--ctp-text);
     border-radius: 2px;
     outline: none;
     cursor: pointer;
