@@ -8,7 +8,6 @@ export function captureStage(): { destroy: () => void } {
     readonly playerPause: string;
     readonly volume: string;
     readonly volume2: string;
-    readonly volume3: string;
     readonly volumeOff: string;
     readonly fullscreenEnter: string;
     readonly fullscreenExit: string;
@@ -73,7 +72,6 @@ export function captureStage(): { destroy: () => void } {
     playerPause: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-player-pause" />`,
     volume: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-volume" />`,
     volume2: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-volume2" />`,
-    volume3: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-volume3" />`,
     volumeOff: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-volume-off" />`,
     fullscreenEnter: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-fullscreen-enter" />`,
     fullscreenExit: `<use href="${import.meta.env.BASE_URL}icons.svg#icon-fullscreen-exit" />`,
@@ -97,6 +95,8 @@ export function captureStage(): { destroy: () => void } {
   const SINGLE_SOURCE_FACTOR = 1;
   const DUAL_SOURCE_FACTOR = 0.7;
   const ASPECT_RATIO_FACTOR = 16 / 9;
+  const VOLUME_STEP = 5;
+  const DEFAULT_UNMUTE_VOLUME = 20;
 
   // ============================================================================
   // State Registries & Context Listeners Cleaner
@@ -123,6 +123,11 @@ export function captureStage(): { destroy: () => void } {
     return el as T;
   }
 
+  /** Reads a slot's current slider volume as a safe non-negative integer. */
+  function getSliderVolume(slot: SlotInstance): number {
+    return Number.parseInt(slot.volumeSlider.value, 10) || 0;
+  }
+
   // ============================================================================
   // Loudness Management Functions
   // ============================================================================
@@ -139,10 +144,22 @@ export function captureStage(): { destroy: () => void } {
    * Refreshes sound output matrices globally to match target relative volume constraints.
    */
   function applyLoudnessCompensation(): void {
-    slotRegistry.forEach((slot) => {
-      const level = Number.parseInt(slot.volumeSlider.value, 10) || 0;
-      slot.applyVolume(level);
-    });
+    slotRegistry.forEach((slot) => slot.applyVolume(getSliderVolume(slot)));
+  }
+
+  // ============================================================================
+  // Slot Focus Resolution (keyboard shortcuts must target the focused player)
+  // ============================================================================
+
+  /**
+   * Resolves which capture slot (of the two players) currently owns keyboard focus.
+   * Returns undefined when focus lives outside both players, so global shortcuts
+   * don't hijack keystrokes meant for other controls on the page.
+   */
+  function slotFromFocus(): SlotInstance | undefined {
+    const active = document.activeElement;
+    if (!(active instanceof Node)) return undefined;
+    return slotRegistry.find((s) => s.playerEl.contains(active));
   }
 
   // ============================================================================
@@ -161,6 +178,12 @@ export function captureStage(): { destroy: () => void } {
     const playBtn = queryElement<HTMLButtonElement>('[data-role="play-btn"]', playerEl);
     const muteBtn = queryElement<HTMLButtonElement>('[data-role="mute-btn"]', playerEl);
     const fullscreenBtn = queryElement<HTMLButtonElement>('[data-role="fullscreen-btn"]', playerEl);
+
+    // Make the player focusable so keyboard shortcuts (f/m/arrows) can be
+    // scoped to "whichever of the two players the user is currently on".
+    if (!playerEl.hasAttribute('tabindex')) {
+      playerEl.tabIndex = 0;
+    }
 
     const slot: SlotInstance = {
       number: slotNumber,
@@ -204,8 +227,6 @@ export function captureStage(): { destroy: () => void } {
       if (!slot.muteIconWrap) return;
       if (muted) {
         slot.muteIconWrap.innerHTML = SVG_ICONS.volumeOff;
-      } else if (level === 0) {
-        slot.muteIconWrap.innerHTML = SVG_ICONS.volume3;
       } else if (level < 40) {
         slot.muteIconWrap.innerHTML = SVG_ICONS.volume2;
       } else {
@@ -221,20 +242,21 @@ export function captureStage(): { destroy: () => void } {
     slot.applyVolume = applyVolume;
 
     const savedVolume = Number.parseInt(localStorage.getItem(storageKey) ?? '100', 10);
+    if (savedVolume === 0) slot.video.muted = true;
     applyVolume(savedVolume);
 
     slot.volumeSlider.addEventListener('input', () => {
-      const level = Number.parseInt(slot.volumeSlider.value, 10) || 0;
-      slot.video.muted = false;
+      const level = getSliderVolume(slot);
+      slot.video.muted = level === 0;
       applyVolume(level);
       localStorage.setItem(storageKey, level.toString());
     });
 
     slot.muteBtn.addEventListener('click', () => {
       slot.video.muted = !slot.video.muted;
-      const level = Number.parseInt(slot.volumeSlider.value, 10) || 0;
+      const level = getSliderVolume(slot);
       if (!slot.video.muted && level === 0) {
-        applyVolume(20);
+        applyVolume(DEFAULT_UNMUTE_VOLUME);
       } else {
         updateVolumeIcon(level, slot.video.muted);
       }
@@ -266,6 +288,12 @@ export function captureStage(): { destroy: () => void } {
     slot.playerEl.addEventListener('mouseleave', () => {
       if (slot.hideTimer) clearTimeout(slot.hideTimer);
       slot.hideTimer = setTimeout(hideControls, HIDE_DELAY_MS);
+    });
+
+    slot.playerEl.addEventListener('mousedown', (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('button, input, a, [role="button"]')) return;
+      slot.playerEl.focus();
     });
 
     slot.playBtn.addEventListener('click', () => {
@@ -420,7 +448,7 @@ export function captureStage(): { destroy: () => void } {
         });
 
         slot.video.srcObject = slot.activeStream;
-        applyVolume(Number.parseInt(slot.volumeSlider.value, 10) || 0);
+        applyVolume(getSliderVolume(slot));
         await slot.video.play();
 
         slot.activeDeviceId = deviceId;
@@ -707,7 +735,7 @@ export function captureStage(): { destroy: () => void } {
       }
 
       // Re-apply this slot's own volume to whatever stream it now holds
-      slot.applyVolume(Number.parseInt(slot.volumeSlider.value, 10) || 0);
+      slot.applyVolume(getSliderVolume(slot));
 
       // Sync the device dropdown selection to reflect the swapped assignment
       const value = slot.activeDeviceId ?? '';
@@ -778,7 +806,8 @@ export function captureStage(): { destroy: () => void } {
   document.addEventListener(
     'keydown',
     (e: KeyboardEvent) => {
-      const slot = slots.find((s) => s.isFullscreen) ?? slot1;
+      const slot = slotFromFocus() ?? slots.find((s) => s.isFullscreen);
+      if (!slot) return;
       const keyLower = e.key.toLowerCase();
 
       if (keyLower === 'f') {
@@ -787,6 +816,16 @@ export function captureStage(): { destroy: () => void } {
       } else if (keyLower === 'm') {
         e.preventDefault();
         slot.muteBtn.click();
+      } else if (keyLower === 'arrowup') {
+        e.preventDefault();
+        const newVolume = Math.min(100, getSliderVolume(slot) + VOLUME_STEP);
+        if (newVolume > 0 && slot.video.muted) slot.video.muted = false;
+        slot.applyVolume(newVolume);
+      } else if (keyLower === 'arrowdown') {
+        e.preventDefault();
+        const newVolume = Math.max(0, getSliderVolume(slot) - VOLUME_STEP);
+        if (newVolume === 0) slot.video.muted = true;
+        slot.applyVolume(newVolume);
       }
     },
     { signal },
