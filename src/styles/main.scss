@@ -279,6 +279,11 @@ body {
         background-color: transparent;
       }
     }
+
+    &--loading {
+      cursor: wait;
+      opacity: 0.8;
+    }
   }
 }
 
@@ -382,6 +387,10 @@ body {
       padding: 8px 10px 10px;
       gap: var(--gap-sm);
     }
+  }
+
+  &--fullscreen {
+    border-radius: 0;
   }
 
   &__video {

@@ -1,3 +1,6 @@
+/**
+ * Initializes the capture stage controls and media-device listeners.
+ */
 export function captureStage(): { destroy: () => void } {
   // ============================================================================
   // Types & Interfaces
@@ -53,6 +56,8 @@ export function captureStage(): { destroy: () => void } {
     readonly fullscreenIconWrap: HTMLElement | null;
     activeStream: MediaStream | null;
     activeDeviceId: string | null;
+    isConnecting: boolean;
+    connectionRequestId: number;
     isFullscreen: boolean;
     hideTimer: ReturnType<typeof setTimeout> | null;
     applyVolume: (level: number) => void;
@@ -112,8 +117,8 @@ export function captureStage(): { destroy: () => void } {
   // ============================================================================
 
   /**
-   * Securely queries an element from the document object model, crashing cleanly if not matched.
-   * @throws {Error} Contextual selector target verification validation failure.
+   * Finds a required element within a parent node.
+   * @throws {Error} If no element matches the selector.
    */
   function queryElement<T extends HTMLElement = HTMLElement>(selector: string, context: ParentNode = document): T {
     const el = context.querySelector(selector);
@@ -123,7 +128,54 @@ export function captureStage(): { destroy: () => void } {
     return el as T;
   }
 
-  /** Reads a slot's current slider volume as a safe non-negative integer. */
+  /**
+   * Synchronizes a dropdown's open styling and accessibility state.
+   */
+  function setDropdownOpen(dropdown: HTMLElement, isOpen: boolean): void {
+    dropdown.classList.toggle('dropdown--open', isOpen);
+    dropdown.setAttribute('aria-expanded', String(isOpen));
+  }
+
+  /**
+   * Creates and appends a dropdown option.
+   */
+  function addDropdownOption(
+    list: HTMLUListElement,
+    label: string,
+    options: { value?: string; id?: string; disabled?: boolean; selected?: boolean; className?: string } = {},
+  ): HTMLButtonElement {
+    const listItem = document.createElement('li');
+    listItem.className = 'dropdown__item';
+
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = `dropdown__option${options.className ? ` ${options.className}` : ''}`;
+    option.textContent = label;
+    option.disabled = options.disabled ?? false;
+    if (options.value !== undefined) option.dataset.value = options.value;
+    if (options.id !== undefined) option.dataset.id = options.id;
+    option.classList.toggle('dropdown__option--selected', options.selected ?? false);
+    option.setAttribute('aria-selected', String(options.selected ?? false));
+
+    listItem.appendChild(option);
+    list.appendChild(listItem);
+    return option;
+  }
+
+  /**
+   * Updates selected styling and ARIA state for the options in a dropdown.
+   */
+  function setSelectedDropdownOption(list: HTMLUListElement, selected: HTMLButtonElement | null): void {
+    list.querySelectorAll<HTMLButtonElement>('.dropdown__option').forEach((option) => {
+      const isSelected = option === selected;
+      option.classList.toggle('dropdown__option--selected', isSelected);
+      option.setAttribute('aria-selected', String(isSelected));
+    });
+  }
+
+  /**
+   * Reads a slot's current slider volume as a safe non-negative integer.
+   */
   function getSliderVolume(slot: SlotInstance): number {
     return Number.parseInt(slot.volumeSlider.value, 10) || 0;
   }
@@ -153,7 +205,6 @@ export function captureStage(): { destroy: () => void } {
 
   /**
    * Resolves which capture slot (of the two players) currently owns keyboard focus.
-   * Returns undefined when focus lives outside both players, so global shortcuts
    * don't hijack keystrokes meant for other controls on the page.
    */
   function slotFromFocus(): SlotInstance | undefined {
@@ -210,6 +261,8 @@ export function captureStage(): { destroy: () => void } {
 
       activeStream: null,
       activeDeviceId: null,
+      isConnecting: false,
+      connectionRequestId: 0,
       isFullscreen: false,
       hideTimer: null,
 
@@ -223,6 +276,9 @@ export function captureStage(): { destroy: () => void } {
 
     const storageKey = `captureVol_slot${slotNumber}`;
 
+    /**
+     * Updates the mute icon to reflect the current volume and mute state.
+     */
     function updateVolumeIcon(level: number, muted: boolean): void {
       if (!slot.muteIconWrap) return;
       if (muted) {
@@ -234,6 +290,9 @@ export function captureStage(): { destroy: () => void } {
       }
     }
 
+    /**
+     * Applies a slider level to the video element and refreshes its volume UI.
+     */
     function applyVolume(level: number): void {
       slot.video.volume = (level / 100) * loudnessFactor();
       slot.volumeSlider.value = level.toString();
@@ -245,158 +304,236 @@ export function captureStage(): { destroy: () => void } {
     if (savedVolume === 0) slot.video.muted = true;
     applyVolume(savedVolume);
 
-    slot.volumeSlider.addEventListener('input', () => {
-      const level = getSliderVolume(slot);
-      slot.video.muted = level === 0;
-      applyVolume(level);
-      localStorage.setItem(storageKey, level.toString());
-    });
+    slot.volumeSlider.addEventListener(
+      'input',
+      () => {
+        const level = getSliderVolume(slot);
+        slot.video.muted = level === 0;
+        applyVolume(level);
+        localStorage.setItem(storageKey, level.toString());
+      },
+      { signal },
+    );
 
-    slot.muteBtn.addEventListener('click', () => {
-      slot.video.muted = !slot.video.muted;
-      const level = getSliderVolume(slot);
-      if (!slot.video.muted && level === 0) {
-        applyVolume(DEFAULT_UNMUTE_VOLUME);
-      } else {
-        updateVolumeIcon(level, slot.video.muted);
-      }
-      applyLoudnessCompensation();
-    });
+    slot.muteBtn.addEventListener(
+      'click',
+      () => {
+        slot.video.muted = !slot.video.muted;
+        const level = getSliderVolume(slot);
+        if (!slot.video.muted && level === 0) {
+          applyVolume(DEFAULT_UNMUTE_VOLUME);
+        } else {
+          updateVolumeIcon(level, slot.video.muted);
+        }
+        applyLoudnessCompensation();
+      },
+      { signal },
+    );
 
+    /**
+     * Makes the player controls visible and restores the cursor.
+     */
     function showControls(): void {
       slot.controls.classList.add('player__controls--visible');
       slot.playerEl.classList.remove('player--cursor-hidden');
     }
 
+    /**
+     * Hides controls while playback is active.
+     */
     function hideControls(): void {
       if (slot.playerEl.classList.contains('player--paused')) return;
       slot.controls.classList.remove('player__controls--visible');
       slot.playerEl.classList.add('player--cursor-hidden');
     }
 
+    /**
+     * Shows controls and schedules them to hide after the configured delay.
+     */
     function resetHideTimer(): void {
       showControls();
       if (slot.hideTimer) clearTimeout(slot.hideTimer);
       slot.hideTimer = setTimeout(hideControls, HIDE_DELAY_MS);
     }
 
-    slot.playerEl.addEventListener('mousemove', resetHideTimer);
-    slot.controls.addEventListener('mouseenter', () => {
-      if (slot.hideTimer) clearTimeout(slot.hideTimer);
-    });
-    slot.controls.addEventListener('mouseleave', resetHideTimer);
-    slot.playerEl.addEventListener('mouseleave', () => {
-      if (slot.hideTimer) clearTimeout(slot.hideTimer);
-      slot.hideTimer = setTimeout(hideControls, HIDE_DELAY_MS);
-    });
+    slot.playerEl.addEventListener('mousemove', resetHideTimer, { signal });
+    slot.controls.addEventListener(
+      'mouseenter',
+      () => {
+        if (slot.hideTimer) clearTimeout(slot.hideTimer);
+      },
+      { signal },
+    );
+    slot.controls.addEventListener('mouseleave', resetHideTimer, { signal });
+    slot.playerEl.addEventListener(
+      'mouseleave',
+      () => {
+        if (slot.hideTimer) clearTimeout(slot.hideTimer);
+        slot.hideTimer = setTimeout(hideControls, HIDE_DELAY_MS);
+      },
+      { signal },
+    );
 
-    slot.playerEl.addEventListener('mousedown', (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (target?.closest('button, input, a, [role="button"]')) return;
-      slot.playerEl.focus();
-    });
+    slot.playerEl.addEventListener(
+      'mousedown',
+      (e: MouseEvent) => {
+        const target = e.target as HTMLElement | null;
+        if (target?.closest('button, input, a, [role="button"]')) return;
+        slot.playerEl.focus();
+      },
+      { signal },
+    );
 
-    slot.playBtn.addEventListener('click', () => {
-      if (!slot.video.srcObject) return;
-      if (slot.video.paused) {
-        slot.video.play().catch(console.error);
-      } else {
-        slot.video.pause();
-      }
-    });
+    slot.playBtn.addEventListener(
+      'click',
+      () => {
+        if (!slot.video.srcObject) return;
+        if (slot.video.paused) {
+          slot.video.play().catch(console.error);
+        } else {
+          slot.video.pause();
+        }
+      },
+      { signal },
+    );
 
-    slot.video.addEventListener('play', () => {
-      if (slot.playIconWrap) slot.playIconWrap.innerHTML = SVG_ICONS.playerPause;
-      slot.playerEl.classList.remove('player--paused');
-      resetHideTimer();
-    });
+    slot.video.addEventListener(
+      'play',
+      () => {
+        if (slot.playIconWrap) slot.playIconWrap.innerHTML = SVG_ICONS.playerPause;
+        slot.playerEl.classList.remove('player--paused');
+        resetHideTimer();
+      },
+      { signal },
+    );
 
-    slot.video.addEventListener('pause', () => {
-      if (slot.playIconWrap) slot.playIconWrap.innerHTML = SVG_ICONS.playerPlay;
-      slot.playerEl.classList.add('player--paused');
-      showControls();
-      if (slot.hideTimer) clearTimeout(slot.hideTimer);
-    });
+    slot.video.addEventListener(
+      'pause',
+      () => {
+        if (slot.playIconWrap) slot.playIconWrap.innerHTML = SVG_ICONS.playerPlay;
+        slot.playerEl.classList.add('player--paused');
+        showControls();
+        if (slot.hideTimer) clearTimeout(slot.hideTimer);
+      },
+      { signal },
+    );
 
+    /**
+     * Requests fullscreen for this player and updates its fullscreen state.
+     */
     function enterFullscreen(): void {
       const player = slot.playerEl;
-      if (player.requestFullscreen) {
-        player.requestFullscreen().catch(console.error);
-      } else if ((player as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> }).webkitRequestFullscreen) {
-        (player as HTMLElement & { webkitRequestFullscreen(): Promise<void> }).webkitRequestFullscreen().catch(console.error);
-      }
-      slot.isFullscreen = true;
-      if (slot.fullscreenIconWrap) slot.fullscreenIconWrap.innerHTML = SVG_ICONS.fullscreenExit;
+      const requestFullscreen =
+        player.requestFullscreen?.bind(player) ??
+        (player as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> }).webkitRequestFullscreen?.bind(player);
+
+      if (!requestFullscreen) return;
+
+      requestFullscreen()
+        .then(() => {
+          slot.isFullscreen = true;
+          slot.playerEl.classList.add('player--fullscreen');
+          if (slot.fullscreenIconWrap) slot.fullscreenIconWrap.innerHTML = SVG_ICONS.fullscreenExit;
+        })
+        .catch(console.error);
     }
 
+    /**
+     * Exits fullscreen and restores this player's fullscreen state.
+     */
     function exitFullscreen(): void {
-      if (document.exitFullscreen) {
-        document.exitFullscreen().catch(console.error);
-      } else if ((document as Document & { webkitExitFullscreen?: () => Promise<void> }).webkitExitFullscreen) {
-        (document as Document & { webkitExitFullscreen(): Promise<void> }).webkitExitFullscreen().catch(console.error);
-      }
-      slot.isFullscreen = false;
-      if (slot.fullscreenIconWrap) slot.fullscreenIconWrap.innerHTML = SVG_ICONS.fullscreenEnter;
+      const exitFullscreen =
+        document.exitFullscreen?.bind(document) ??
+        (document as Document & { webkitExitFullscreen?: () => Promise<void> }).webkitExitFullscreen?.bind(document);
+
+      if (!exitFullscreen) return;
+
+      exitFullscreen()
+        .then(() => {
+          slot.isFullscreen = false;
+          slot.playerEl.classList.remove('player--fullscreen');
+          if (slot.fullscreenIconWrap) slot.fullscreenIconWrap.innerHTML = SVG_ICONS.fullscreenEnter;
+        })
+        .catch(console.error);
     }
 
+    /**
+     * Toggles this player between fullscreen and windowed mode.
+     */
     function toggleFullscreen(): void {
       slot.isFullscreen ? exitFullscreen() : enterFullscreen();
     }
     slot.toggleFullscreen = toggleFullscreen;
 
-    slot.fullscreenBtn.addEventListener('click', toggleFullscreen);
-    slot.playerEl.addEventListener('dblclick', function (event: MouseEvent) {
-      const allowedNodes = ['VIDEO', 'DIV'];
-      if (!allowedNodes.includes((event?.target as Node).nodeName)) {
-        return;
-      }
-      toggleFullscreen();
-    });
+    slot.fullscreenBtn.addEventListener('click', toggleFullscreen, { signal });
+    slot.playerEl.addEventListener(
+      'dblclick',
+      function (event: MouseEvent) {
+        const allowedNodes = ['VIDEO', 'DIV'];
+        const target = event.target as Node | null;
+        if (!target || !allowedNodes.includes(target.nodeName)) {
+          return;
+        }
+        toggleFullscreen();
+      },
+      { signal },
+    );
 
+    /**
+     * Opens the slot's source dropdown.
+     */
     function openDropdown(): void {
-      slot.dropdownWrap.classList.add('dropdown--open');
-      slot.dropdownWrap.setAttribute('aria-expanded', 'true');
+      setDropdownOpen(slot.dropdownWrap, true);
     }
 
+    /**
+     * Closes the slot's source dropdown.
+     */
     function closeDropdown(): void {
-      slot.dropdownWrap.classList.remove('dropdown--open');
-      slot.dropdownWrap.setAttribute('aria-expanded', 'false');
+      setDropdownOpen(slot.dropdownWrap, false);
     }
 
+    /**
+     * Toggles the slot's source dropdown.
+     */
     function toggleDropdown(): void {
       slot.dropdownWrap.classList.contains('dropdown--open') ? closeDropdown() : openDropdown();
     }
 
-    slot.dropdownTrigger.addEventListener('click', toggleDropdown);
+    slot.dropdownTrigger.addEventListener('click', toggleDropdown, { signal });
 
-    slot.dropdownWrap.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        closeDropdown();
-        slot.dropdownTrigger.focus();
-      }
-    });
+    slot.dropdownWrap.addEventListener(
+      'keydown',
+      (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          closeDropdown();
+          slot.dropdownTrigger.focus();
+        }
+      },
+      { signal },
+    );
 
+    /**
+     * Selects a source and synchronizes the dropdown and connect button.
+     */
     function selectDropdownOption(option: HTMLButtonElement): void {
       const value = option.dataset.value ?? '';
       const label = option.textContent ?? '';
 
-      slot.dropdownList.querySelectorAll('.dropdown__option').forEach((opt) => {
-        const matching = opt === option;
-        opt.classList.toggle('dropdown__option--selected', matching);
-        opt.setAttribute('aria-selected', matching ? 'true' : 'false');
-      });
+      setSelectedDropdownOption(slot.dropdownList, option);
 
       slot.dropdownLabel.textContent = label;
       slot.dropdownWrap.dataset.value = value;
       closeDropdown();
       slot.dropdownTrigger.focus();
 
-      if (slot.activeDeviceId) {
-        setConnectBtnMode(value === slot.activeDeviceId ? 'disconnect' : 'connect');
-      }
+      setConnectBtnMode(slot.activeDeviceId ? (value === slot.activeDeviceId ? 'disconnect' : 'connect') : 'connect');
     }
     slot.selectDropdownOption = selectDropdownOption;
 
+    /**
+     * Sets the connect button label and icon for the requested mode.
+     */
     function setConnectBtnMode(mode: 'connect' | 'disconnect'): void {
       const label = slot.connectBtn.querySelector('.connect-btn__label');
       if (slot.connectIconWrap) slot.connectIconWrap.innerHTML = mode === 'disconnect' ? SVG_ICONS.plugX : SVG_ICONS.plug;
@@ -404,14 +541,20 @@ export function captureStage(): { destroy: () => void } {
     }
     slot.setConnectBtnMode = setConnectBtnMode;
 
+    /**
+     * Connects this slot to its selected capture device.
+     */
     async function connectDevice(): Promise<void> {
       const deviceId = slot.dropdownWrap.dataset.value ?? '';
-      if (!deviceId) return;
+      if (!deviceId || slot.isConnecting) return;
 
       if (deviceId === slot.activeDeviceId) {
         disconnectDevice();
         return;
       }
+
+      slot.isConnecting = true;
+      const requestId = ++slot.connectionRequestId;
 
       if (slot.activeStream) {
         slot.activeStream.getTracks().forEach((track) => track.stop());
@@ -437,7 +580,7 @@ export function captureStage(): { destroy: () => void } {
       }
 
       try {
-        slot.activeStream = await navigator.mediaDevices.getUserMedia({
+        const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             deviceId: { exact: deviceId },
             width: { ideal: 1920 },
@@ -447,22 +590,49 @@ export function captureStage(): { destroy: () => void } {
           audio: audioConstraints,
         });
 
+        if (requestId !== slot.connectionRequestId) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        slot.activeStream = stream;
         slot.video.srcObject = slot.activeStream;
         applyVolume(getSliderVolume(slot));
         await slot.video.play();
 
+        if (requestId !== slot.connectionRequestId) return;
         slot.activeDeviceId = deviceId;
         slot.noSignal.style.display = 'none';
         setConnectBtnMode('disconnect');
         applyLoudnessCompensation();
       } catch (error) {
+        if (requestId !== slot.connectionRequestId) return;
+
+        if (slot.activeStream) {
+          slot.activeStream.getTracks().forEach((track) => track.stop());
+          slot.activeStream = null;
+        }
+        slot.video.srcObject = null;
+        slot.activeDeviceId = null;
+        slot.noSignal.style.display = 'flex';
+        slot.playerEl.classList.add('player--paused');
+        setConnectBtnMode('connect');
+
         const msg = error instanceof Error ? error.message : String(error);
         alert(`Could not connect (slot ${slot.number}): ${msg}`);
         console.error(error);
+      } finally {
+        if (requestId === slot.connectionRequestId) slot.isConnecting = false;
       }
     }
 
+    /**
+     * Stops this slot's capture tracks and restores its disconnected UI.
+     */
     function disconnectDevice(): void {
+      slot.connectionRequestId += 1;
+      slot.isConnecting = false;
+
       if (slot.activeStream) {
         slot.activeStream.getTracks().forEach((track) => track.stop());
         slot.activeStream = null;
@@ -480,9 +650,13 @@ export function captureStage(): { destroy: () => void } {
 
     slot.connectDevice = connectDevice;
     slot.disconnectDevice = disconnectDevice;
-    slot.connectBtn.addEventListener('click', () => {
-      connectDevice().catch(console.error);
-    });
+    slot.connectBtn.addEventListener(
+      'click',
+      () => {
+        connectDevice().catch(console.error);
+      },
+      { signal },
+    );
 
     slotRegistry.push(slot);
     return slot;
@@ -491,46 +665,112 @@ export function captureStage(): { destroy: () => void } {
   const slot1 = createSlot(1);
   const slot2 = createSlot(2);
   const slots = slotRegistry;
+  let deviceEnumerationPromise: Promise<void> | null = null;
+  let deviceEnumerationQueued = false;
 
   // ============================================================================
   // Device Enumeration Setup Engine
   // ============================================================================
 
   /**
-   * Refreshes local peripheral access mappings securely.
+   * Shows a disabled loading option while device enumeration is in progress.
    */
-  async function enumerateDevices(): Promise<void> {
-    try {
-      const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      tempStream.getTracks().forEach((track) => track.stop());
-    } catch (permissionError) {
-      const msg = permissionError instanceof Error ? permissionError.message : String(permissionError);
-      console.info('Camera/microphone permission denied or unavailable:', msg);
-    }
-
-    const allDevices = await navigator.mediaDevices.enumerateDevices();
-    const videoInputs = allDevices.filter((d) => d.kind === 'videoinput');
-    const audioInputs = allDevices.filter((d) => d.kind === 'audioinput');
-
-    const audioByGroup: Record<string, MediaDeviceInfo> = {};
-    audioInputs.forEach((audio) => {
-      if (audio.groupId) audioByGroup[audio.groupId] = audio;
+  function setSlotDropdownLoading(slot: SlotInstance): void {
+    slot.dropdownList.innerHTML = '';
+    addDropdownOption(slot.dropdownList, 'Loading devices…', {
+      disabled: true,
+      className: 'dropdown__option--empty dropdown__option--loading',
     });
-
-    const usbAudioDevice = audioInputs.find((a) => /digital audio interface.*usb digital audio/i.test(a.label));
-
-    deviceGroupMap = {};
-    videoInputs.forEach((v) => {
-      const isUsbVideo = /usb video/i.test(v.label);
-      deviceGroupMap[v.deviceId] = {
-        groupId: v.groupId,
-        audioDevice: isUsbVideo && usbAudioDevice ? usbAudioDevice : audioByGroup[v.groupId] || null,
-      };
-    });
-
-    slots.forEach((slot) => rebuildSlotDropdown(slot, videoInputs));
   }
 
+  /**
+   * Shows a disabled message option in a slot's device dropdown.
+   */
+  function setSlotDropdownEmpty(slot: SlotInstance, message: string): void {
+    slot.dropdownList.innerHTML = '';
+    addDropdownOption(slot.dropdownList, message, { disabled: true, className: 'dropdown__option--empty' });
+  }
+
+  /**
+   * Queues a device refresh, coalescing repeated requests into one refresh cycle.
+   */
+  function enumerateDevices(): Promise<void> {
+    if (deviceEnumerationPromise) {
+      deviceEnumerationQueued = true;
+      return deviceEnumerationPromise;
+    }
+
+    deviceEnumerationPromise = (async () => {
+      do {
+        deviceEnumerationQueued = false;
+        await loadDevices();
+      } while (deviceEnumerationQueued && !signal.aborted);
+    })().finally(() => {
+      deviceEnumerationPromise = null;
+    });
+    return deviceEnumerationPromise;
+  }
+
+  /**
+   * Enumerates media devices and updates source-to-audio mappings and dropdowns.
+   */
+  async function loadDevices(): Promise<void> {
+    if (signal.aborted) return;
+    slots.forEach(setSlotDropdownLoading);
+
+    try {
+      let allDevices = await navigator.mediaDevices.enumerateDevices();
+      if (signal.aborted) return;
+      const labelsAreHidden = allDevices.some((device) => !device.label);
+      const alreadyCapturing = slots.some((slot) => slot.activeStream?.getTracks().some((track) => track.readyState === 'live'));
+
+      if (labelsAreHidden && !alreadyCapturing) {
+        let tempStream: MediaStream | null = null;
+        try {
+          tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        } catch (permissionError) {
+          const msg = permissionError instanceof Error ? permissionError.message : String(permissionError);
+          console.info('Camera/microphone permission denied or unavailable:', msg);
+        } finally {
+          tempStream?.getTracks().forEach((track) => track.stop());
+        }
+
+        if (signal.aborted) return;
+        allDevices = await navigator.mediaDevices.enumerateDevices();
+      }
+
+      if (signal.aborted) return;
+      const videoInputs = allDevices.filter((d) => d.kind === 'videoinput');
+      const audioInputs = allDevices.filter((d) => d.kind === 'audioinput');
+
+      const audioByGroup: Record<string, MediaDeviceInfo> = {};
+      audioInputs.forEach((audio) => {
+        if (audio.groupId) audioByGroup[audio.groupId] = audio;
+      });
+
+      const usbAudioDevice = audioInputs.find((a) => /digital audio interface.*usb digital audio/i.test(a.label));
+
+      deviceGroupMap = {};
+      videoInputs.forEach((v) => {
+        const isUsbVideo = /usb video/i.test(v.label);
+        deviceGroupMap[v.deviceId] = {
+          groupId: v.groupId,
+          audioDevice: isUsbVideo && usbAudioDevice ? usbAudioDevice : audioByGroup[v.groupId] || null,
+        };
+      });
+
+      slots.forEach((slot) => rebuildSlotDropdown(slot, videoInputs));
+    } catch (error) {
+      if (signal.aborted) return;
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('Could not enumerate capture devices:', msg);
+      slots.forEach((slot) => setSlotDropdownEmpty(slot, 'Unable to load devices'));
+    }
+  }
+
+  /**
+   * Rebuilds a slot's dropdown with available devices matching configured sources.
+   */
   function rebuildSlotDropdown(slot: SlotInstance, videoInputs: MediaDeviceInfo[]): void {
     const previousValue = slot.dropdownWrap.dataset.value ?? '';
     slot.dropdownList.innerHTML = '';
@@ -541,42 +781,22 @@ export function captureStage(): { destroy: () => void } {
       if (!found) return;
 
       foundAny = true;
+      const isSelected = found.deviceId === previousValue;
+      const option = addDropdownOption(slot.dropdownList, name, {
+        value: found.deviceId,
+        selected: isSelected,
+      });
 
-      const listItem = document.createElement('li');
-      listItem.className = 'dropdown__item';
-
-      const option = document.createElement('button');
-      option.type = 'button';
-      option.className = 'dropdown__option';
-      option.dataset.value = found.deviceId;
-      option.textContent = name;
-
-      if (found.deviceId === previousValue) {
-        option.classList.add('dropdown__option--selected');
-        option.setAttribute('aria-selected', 'true');
+      if (isSelected) {
         slot.dropdownLabel.textContent = name;
         slot.dropdownWrap.dataset.value = found.deviceId;
-      } else {
-        option.setAttribute('aria-selected', 'false');
       }
 
-      option.addEventListener('click', () => slot.selectDropdownOption(option));
-      listItem.appendChild(option);
-      slot.dropdownList.appendChild(listItem);
+      option.addEventListener('click', () => slot.selectDropdownOption(option), { signal });
     });
 
     if (!foundAny) {
-      const listItem = document.createElement('li');
-      listItem.className = 'dropdown__item';
-
-      const empty = document.createElement('button');
-      empty.type = 'button';
-      empty.className = 'dropdown__option dropdown__option--empty';
-      empty.disabled = true;
-      empty.textContent = 'No capture devices found';
-
-      listItem.appendChild(empty);
-      slot.dropdownList.appendChild(listItem);
+      setSlotDropdownEmpty(slot, 'No capture devices found');
     }
   }
 
@@ -596,7 +816,7 @@ export function captureStage(): { destroy: () => void } {
   const VERTICAL_CHROME = 140;
 
   /**
-   * Evaluates layout boundary thresholds dynamically to scale viewport targets smoothly.
+   * Sizes player viewports to fit the available stage dimensions and layout ratio.
    */
   function fitStageHeight(layout: Layout): void {
     const availableHeight = window.innerHeight - VERTICAL_CHROME;
@@ -626,6 +846,9 @@ export function captureStage(): { destroy: () => void } {
   /**
    * Applies target viewport arrangements onto elements.
    */
+  /**
+   * Applies a layout's visibility, width, connection, and viewport sizing.
+   */
   function applyLayout(layoutId: string): void {
     const layout = LAYOUTS.find((l) => l.id === layoutId) ?? LAYOUTS[0];
 
@@ -636,16 +859,8 @@ export function captureStage(): { destroy: () => void } {
     slot2Row.classList.toggle('toolbar__source-row--hidden', !dualSlots);
     slot2.playerEl.classList.toggle('player--hidden', !dualSlots);
 
-    const isSplit7030 = layout.id === '70-30';
-    const isSplit3070 = layout.id === '30-70';
-
-    slot1.playerEl.classList.toggle('player--narrow', isSplit3070);
-    slot2.playerEl.classList.toggle('player--narrow', isSplit7030);
-
-    if (!isSplit7030 && !isSplit3070) {
-      slot1.playerEl.classList.remove('player--narrow');
-      slot2.playerEl.classList.remove('player--narrow');
-    }
+    slot1.playerEl.classList.toggle('player--narrow', layout.id === '30-70');
+    slot2.playerEl.classList.toggle('player--narrow', layout.id === '70-30');
 
     if (layout.slots === 1 && slot2.activeDeviceId) {
       slot2.disconnectDevice();
@@ -654,61 +869,60 @@ export function captureStage(): { destroy: () => void } {
     fitStageHeight(layout);
   }
 
+  /**
+   * Opens the layout selector dropdown.
+   */
   function openLayoutDropdown(): void {
-    layoutDropdownWrap.classList.add('dropdown--open');
-    layoutDropdownWrap.setAttribute('aria-expanded', 'true');
+    setDropdownOpen(layoutDropdownWrap, true);
   }
 
+  /**
+   * Closes the layout selector dropdown.
+   */
   function closeLayoutDropdown(): void {
-    layoutDropdownWrap.classList.remove('dropdown--open');
-    layoutDropdownWrap.setAttribute('aria-expanded', 'false');
+    setDropdownOpen(layoutDropdownWrap, false);
   }
 
+  /**
+   * Toggles the layout selector dropdown.
+   */
   function toggleLayoutDropdown(): void {
     layoutDropdownWrap.classList.contains('dropdown--open') ? closeLayoutDropdown() : openLayoutDropdown();
   }
 
+  /**
+   * Builds layout selector options and binds their selection handlers.
+   */
   function buildLayoutList(): void {
     layoutList.innerHTML = '';
     LAYOUTS.forEach((layout) => {
-      const listItem = document.createElement('li');
-      listItem.className = 'dropdown__item';
-
-      const option = document.createElement('button');
-      option.type = 'button';
-      option.className = 'dropdown__option';
-      option.dataset.id = layout.id;
-      option.textContent = layout.label;
-
       const isSelected = layout.id === stage.dataset.layout;
-      option.classList.toggle('dropdown__option--selected', isSelected);
-      option.setAttribute('aria-selected', isSelected ? 'true' : 'false');
-
-      option.addEventListener('click', () => {
-        layoutList.querySelectorAll('.dropdown__option').forEach((opt) => {
-          const matching = opt === option;
-          opt.classList.toggle('dropdown__option--selected', matching);
-          opt.setAttribute('aria-selected', matching ? 'true' : 'false');
-        });
-
-        if (layout.id === 'single') {
-          swapButton.classList.add('hidden');
-        } else {
-          swapButton.classList.remove('hidden');
-        }
-
-        applyLayout(layout.id);
-        closeLayoutDropdown();
-        layoutTrigger.focus();
+      const option = addDropdownOption(layoutList, layout.label, {
+        id: layout.id,
+        selected: isSelected,
       });
 
-      listItem.appendChild(option);
-      layoutList.appendChild(listItem);
+      option.addEventListener(
+        'click',
+        () => {
+          setSelectedDropdownOption(layoutList, option);
+
+          swapButton.classList.toggle('hidden', layout.id === 'single');
+
+          applyLayout(layout.id);
+          closeLayoutDropdown();
+          layoutTrigger.focus();
+        },
+        { signal },
+      );
     });
   }
 
-  layoutTrigger.addEventListener('click', toggleLayoutDropdown);
+  layoutTrigger.addEventListener('click', toggleLayoutDropdown, { signal });
 
+  /**
+   * Swaps active streams and device selections between the two slots.
+   */
   function swapSlotDevices(): void {
     const stream1 = slot1.activeStream;
     const stream2 = slot2.activeStream;
@@ -740,12 +954,12 @@ export function captureStage(): { destroy: () => void } {
       // Sync the device dropdown selection to reflect the swapped assignment
       const value = slot.activeDeviceId ?? '';
       slot.dropdownWrap.dataset.value = value;
-      slot.dropdownList.querySelectorAll<HTMLButtonElement>('.dropdown__option').forEach((opt) => {
-        const matching = value !== '' && opt.dataset.value === value;
-        opt.classList.toggle('dropdown__option--selected', matching);
-        opt.setAttribute('aria-selected', matching ? 'true' : 'false');
-        if (matching) slot.dropdownLabel.textContent = opt.textContent ?? '';
-      });
+      const selectedOption =
+        Array.from(slot.dropdownList.querySelectorAll<HTMLButtonElement>('.dropdown__option')).find(
+          (option) => value !== '' && option.dataset.value === value,
+        ) ?? null;
+      setSelectedDropdownOption(slot.dropdownList, selectedOption);
+      if (selectedOption) slot.dropdownLabel.textContent = selectedOption.textContent ?? '';
     });
 
     applyLoudnessCompensation();
@@ -753,12 +967,16 @@ export function captureStage(): { destroy: () => void } {
 
   swapButton.addEventListener('click', swapSlotDevices, { signal });
 
-  layoutDropdownWrap.addEventListener('keydown', (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      closeLayoutDropdown();
-      layoutTrigger.focus();
-    }
-  });
+  layoutDropdownWrap.addEventListener(
+    'keydown',
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeLayoutDropdown();
+        layoutTrigger.focus();
+      }
+    },
+    { signal },
+  );
 
   // ============================================================================
   // Global Shared Observers (Cleanly Bound & Tracked via Signal)
@@ -781,8 +999,7 @@ export function captureStage(): { destroy: () => void } {
       if (!layoutDropdownWrap.contains(target)) closeLayoutDropdown();
       slots.forEach((slot) => {
         if (!slot.dropdownWrap.contains(target)) {
-          slot.dropdownWrap.classList.remove('dropdown--open');
-          slot.dropdownWrap.setAttribute('aria-expanded', 'false');
+          setDropdownOpen(slot.dropdownWrap, false);
         }
       });
     },
@@ -794,9 +1011,11 @@ export function captureStage(): { destroy: () => void } {
     () => {
       const currentFullscreenElement = document.fullscreenElement;
       slots.forEach((slot) => {
-        if (!currentFullscreenElement && slot.isFullscreen) {
-          slot.isFullscreen = false;
-          if (slot.fullscreenIconWrap) slot.fullscreenIconWrap.innerHTML = SVG_ICONS.fullscreenEnter;
+        const isActive = currentFullscreenElement === slot.playerEl;
+        slot.isFullscreen = isActive;
+        slot.playerEl.classList.toggle('player--fullscreen', isActive);
+        if (slot.fullscreenIconWrap) {
+          slot.fullscreenIconWrap.innerHTML = isActive ? SVG_ICONS.fullscreenExit : SVG_ICONS.fullscreenEnter;
         }
       });
     },
@@ -851,6 +1070,8 @@ export function captureStage(): { destroy: () => void } {
     destroy: () => {
       abortController.abort();
       slots.forEach((slot) => {
+        slot.connectionRequestId += 1;
+        slot.isConnecting = false;
         if (slot.hideTimer) clearTimeout(slot.hideTimer);
         if (slot.activeStream) {
           slot.activeStream.getTracks().forEach((track) => track.stop());
